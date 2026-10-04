@@ -9,7 +9,7 @@ from threading import Thread
 app = Flask(__name__)
 @app.route('/')
 def home():
-    return "Blackout404 v25 SOLO FUTURI FIX PANNELLO - ONLINE!"
+    return "Blackout404 v26 PULITO - ONLINE!"
 
 def run_web():
     port = int(os.environ.get("PORT", 10000))
@@ -48,20 +48,21 @@ events_db = load_events()
 def build_calendar_text(year=2026, month=10):
     import calendar
     cal = calendar.monthcalendar(year, month)
-    header = "LUN MAR MER GIO VEN SAB DOM"
+    # Numeri in colonne e righe - allineati
+    header = "LUN  MAR  MER  GIO  VEN  SAB  DOM"
     lines = [header]
     for week in cal:
-        line = ""
+        row = ""
         for day in week:
             if day == 0:
-                line += "    "
+                row += "     "  # 5 spazi per allineamento
             else:
                 key = f"{year}-{month:02d}-{day:02d}"
                 if key in events_db:
-                    line += f"[{day:2d}] "
+                    row += f"[{day:2d}] "  # [ 4] = 5 chars
                 else:
-                    line += f" {day:2d}  "
-        lines.append(line.rstrip())
+                    row += f" {day:2d}  "  #  4  = 5 chars
+        lines.append(row.rstrip())
     cal_text = "\n".join(lines)
     event_list = ""
     for date in sorted(events_db.keys()):
@@ -81,78 +82,94 @@ def create_calendar_embed(cal_text, event_list):
     if len(desc) > 3500:
         desc = desc[:3500] + "\n..."
     embed = discord.Embed(title="CALENDARIO GIOCHI - Blackout404", description=desc, color=0x2f3136)
-    embed.set_footer(text="v25 SOLO FUTURI FIX PANNELLO • Giorni da oggi • 24h • /calendario")
+    embed.set_footer(text="v26 PULITO • Colonne allineate • Solo futuri • /calendario")
     return embed
 
-class HourModal(discord.ui.Modal):
-    def __init__(self, parent_view):
-        super().__init__(title="Orario 24h - Conferma Evento")
-        self.parent_view_ref = parent_view
-        self.hour_input = discord.ui.TextInput(label="Ora (24h es: 14:00 o 21:30)", placeholder="Es: 21:00", max_length=5, required=True)
-        self.add_item(self.hour_input)
+def get_main_embed(view):
+    today = datetime.datetime.now().day
+    now_hour = datetime.datetime.now().hour
+    game_txt = GAMES[view.game_id]['name'] if view.game_id else "❌ non scelto"
+    day_txt = view.day if view.day else "❌ non scelto"
+    players_txt = view.players if view.players else "❌"
+    leve_txt = view.leve if view.leve else "❌"
+    hour_txt = view.hour if view.hour else "❌"
 
-    async def on_submit(self, interaction: discord.Interaction):
-        # valida ora 24h
-        hour_str = self.hour_input.value.strip()
+    # sotto giorno metti pannello con le 24 escludendo precedenti
+    hour_info = f"Ore disponibili: da {now_hour+1}:00 a 23:00 (escluse precedenti)" if view.day and int(view.day)==today else "Ore: 00:00-23:00 (24h)"
+
+    desc = (
+        f"**PANNELLO UNICO - Seleziona tutto qui, zero spam!**\n\n"
+        f"🎮 **Gioco:** {game_txt}\n"
+        f"📅 **Giorno:** {day_txt} (solo da oggi {today} a 31)\n"
+        f"   └─ {hour_info}\n"
+        f"👥 **Player:** {players_txt}\n"
+        f"🔧 **Leve:** {leve_txt}\n"
+        f"🕒 **Ora:** {hour_txt}\n\n"
+        f"Seleziona i menu sotto 👇 - Il pannello si aggiorna qui, senza altri messaggi!"
+    )
+    embed = discord.Embed(title="📅 Crea Evento - Pannello Unico Pulito", description=desc, color=0x00ff00)
+    return embed
+
+class CreaEventoView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=600)
+        self.game_id = None
+        self.day = None
+        self.players = None
+        self.leve = None
+        self.hour = None
+        
+        self.add_item(GameSelectPanel(self))
+        self.add_item(DaySelectPanel(self))
+        self.add_item(HourSelectPanel(self))
+        self.add_item(PlayersSelectPanel(self))
+        self.add_item(LeveSelectPanel(self))
+
+    async def update_embed(self, interaction):
+        embed = get_main_embed(self)
         try:
-            parts = hour_str.split(":")
-            h = int(parts[0])
-            m = int(parts[1]) if len(parts)>1 else 0
-            if not (0 <= h <= 23 and 0 <= m <= 59):
-                raise ValueError
-            hour_formatted = f"{h:02d}:{m:02d}"
+            await interaction.response.edit_message(embed=embed, view=self)
         except:
-            await interaction.response.send_message("❌ Ora non valida! Usa formato 24h es: 14:00", ephemeral=True)
-            return
+            try:
+                await interaction.followup.edit_message(interaction.message.id, embed=embed, view=self)
+            except:
+                await interaction.response.defer()
 
-        if not all([self.parent_view_ref.game_id, self.parent_view_ref.day, self.parent_view_ref.players, self.parent_view_ref.leve]):
-            await interaction.response.send_message("❌ Manca qualche selezione! Rifai.", ephemeral=True)
+    @discord.ui.button(label="✅ CONFERMA EVENTO", style=discord.ButtonStyle.success, row=4)
+    async def conferma(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not all([self.game_id, self.day, self.players, self.leve, self.hour]):
+            missing = []
+            if not self.game_id: missing.append("Gioco")
+            if not self.day: missing.append("Giorno")
+            if not self.hour: missing.append("Ora")
+            if not self.players: missing.append("Player")
+            if not self.leve: missing.append("Leve")
+            embed = get_main_embed(self)
+            embed.color = 0xff0000
+            embed.add_field(name="❌ Manca", value=", ".join(missing), inline=False)
+            await interaction.response.edit_message(embed=embed, view=self)
             return
-
-        date_key = f"2026-10-{int(self.parent_view_ref.day):02d}"
+        
+        date_key = f"2026-10-{int(self.day):02d}"
         if date_key not in events_db:
             events_db[date_key] = []
         events_db[date_key].append({
-            "game": self.parent_view_ref.game_id,
-            "game_name": GAMES[self.parent_view_ref.game_id]['name'],
-            "players": self.parent_view_ref.players,
-            "leve": self.parent_view_ref.leve,
-            "hour": hour_formatted,
+            "game": self.game_id,
+            "game_name": GAMES[self.game_id]['name'],
+            "players": self.players,
+            "leve": self.leve,
+            "hour": self.hour,
             "author": str(interaction.user.display_name)
         })
         events_db[date_key] = sorted(events_db[date_key], key=lambda x: x['hour'])
         save_events(events_db)
 
-        await interaction.response.send_message(
-            f"✅ Evento creato **{self.parent_view_ref.day} Ottobre ore {hour_formatted}**\n"
-            f"{GAMES[self.parent_view_ref.game_id]['emoji']} {GAMES[self.parent_view_ref.game_id]['name']} | 👥{self.parent_view_ref.players} | Leve:{self.parent_view_ref.leve}",
-            ephemeral=True
+        embed = discord.Embed(
+            title="✅ Evento Creato!",
+            description=f"**{self.day} Ottobre ore {self.hour}**\n{GAMES[self.game_id]['emoji']} {GAMES[self.game_id]['name']} | 👥{self.players} | Leve:{self.leve}",
+            color=0x00ff00
         )
-
-class CreaEventoView(discord.ui.View):
-    def __init__(self):
-        super().__init__(timeout=300)
-        self.game_id = None
-        self.day = None
-        self.players = None
-        self.leve = None
-        # 4 SELECT - 1 per riga (Discord max 5 righe)
-        self.add_item(GameSelectPanel(self))
-        self.add_item(DaySelectPanel(self))
-        self.add_item(PlayersSelectPanel(self))
-        self.add_item(LeveSelectPanel(self))
-
-    @discord.ui.button(label="🕒 Imposta Ora 24h e Conferma", style=discord.ButtonStyle.success, row=4)
-    async def conferma(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if not all([self.game_id, self.day, self.players, self.leve]):
-            missing = []
-            if not self.game_id: missing.append("Gioco")
-            if not self.day: missing.append("Giorno")
-            if not self.players: missing.append("Player")
-            if not self.leve: missing.append("Leve")
-            await interaction.response.send_message(f"❌ Manca: {', '.join(missing)}!", ephemeral=True)
-            return
-        await interaction.response.send_modal(HourModal(self))
+        await interaction.response.edit_message(embed=embed, view=None)
 
 class GameSelectPanel(discord.ui.Select):
     def __init__(self, parent_view):
@@ -165,39 +182,66 @@ class GameSelectPanel(discord.ui.Select):
         super().__init__(placeholder="🎮 1. Gioco...", options=options, row=0)
     async def callback(self, interaction: discord.Interaction):
         self.parent_view_ref.game_id = self.values[0]
-        await interaction.response.send_message(f"✅ Gioco: {GAMES[self.values[0]]['name']}", ephemeral=True)
+        await self.parent_view_ref.update_embed(interaction)
 
 class DaySelectPanel(discord.ui.Select):
     def __init__(self, parent_view):
         self.parent_view_ref = parent_view
-        # TOGLI GIORNI PRECEDENTI A OGGI
         today = datetime.datetime.now().day
-        current_month = datetime.datetime.now().month
-        # Se siamo in ottobre 2026, partiamo da oggi, altrimenti se mese diverso mostriamo tutto (per test)
-        # Per richiesta: solo da oggi in poi
-        start_day = today if current_month == 10 else today
-        # Solo giorni da oggi a 31
-        options = [discord.SelectOption(label=f"Giorno {d}", value=str(d)) for d in range(start_day, 32)]
-        if not options:  # se siamo a fine mese, mostra almeno domani del mese prossimo (fallback)
-            options = [discord.SelectOption(label=f"Giorno {d}", value=str(d)) for d in range(start_day, 32)]
-        super().__init__(placeholder=f"📅 2. Giorno (da {start_day} a 31 - solo futuri)...", options=options[:25], row=1)
+        # Solo giorni futuri - da oggi a 31
+        options = [discord.SelectOption(label=f"{d} Ottobre", value=str(d), description=f"Giorno {d}") for d in range(today, 32)]
+        super().__init__(placeholder=f"📅 2. Giorno (da {today} a 31 - solo futuri)", options=options[:25], row=1)
     async def callback(self, interaction: discord.Interaction):
         self.parent_view_ref.day = self.values[0]
-        await interaction.response.send_message(f"✅ Giorno: {self.values[0]}", ephemeral=True)
+        # Aggiorna anche le ore disponibili se cambia giorno
+        self.parent_view_ref.hour = None
+        # Ricrea il menu ore con filtro
+        for child in self.parent_view_ref.children:
+            if isinstance(child, HourSelectPanel):
+                self.parent_view_ref.remove_item(child)
+                break
+        self.parent_view_ref.add_item(HourSelectPanel(self.parent_view_ref))
+        await self.parent_view_ref.update_embed(interaction)
+
+class HourSelectPanel(discord.ui.Select):
+    def __init__(self, parent_view):
+        self.parent_view_ref = parent_view
+        today = datetime.datetime.now().day
+        now_hour = datetime.datetime.now().hour
+        selected_day = int(parent_view.day) if parent_view.day else today
+        
+        options = []
+        if selected_day == today:
+            # Escludi ore precedenti
+            start_h = now_hour + 1
+            for h in range(start_h, 24):
+                options.append(discord.SelectOption(label=f"{h:02d}:00", value=f"{h:02d}:00"))
+            if not options:
+                options.append(discord.SelectOption(label="Nessuna ora disponibile oggi", value="23:59", description="Scegli domani"))
+        else:
+            for h in range(24):
+                options.append(discord.SelectOption(label=f"{h:02d}:00", value=f"{h:02d}:00"))
+        
+        # Discord max 25
+        super().__init__(placeholder="🕒 3. Ora (24h - escluse precedenti)...", options=options[:25], row=1)
+    
+    async def callback(self, interaction: discord.Interaction):
+        self.parent_view_ref.hour = self.values[0]
+        await self.parent_view_ref.update_embed(interaction)
 
 class PlayersSelectPanel(discord.ui.Select):
     def __init__(self, parent_view):
         self.parent_view_ref = parent_view
         options = [
-            discord.SelectOption(label="1 Player", value="1", emoji="👤"),
-            discord.SelectOption(label="2 Player", value="2", emoji="👥"),
-            discord.SelectOption(label="3 Player", value="3", emoji="👥"),
-            discord.SelectOption(label="4 Player", value="4", emoji="👥"),
+            discord.SelectOption(label="1 Player", value="1"),
+            discord.SelectOption(label="2 Player", value="2"),
+            discord.SelectOption(label="3 Player", value="3"),
+            discord.SelectOption(label="4 Player", value="4"),
         ]
-        super().__init__(placeholder="👥 3. Player 1-4...", options=options, row=2)
+        super().__init__(placeholder="👥 4. Player 1-4...", options=options, row=2)
     async def callback(self, interaction: discord.Interaction):
         self.parent_view_ref.players = self.values[0]
-        await interaction.response.send_message(f"✅ Player: {self.values[0]}", ephemeral=True)
+        await self.parent_view_ref.update_embed(interaction)
 
 class LeveSelectPanel(discord.ui.Select):
     def __init__(self, parent_view):
@@ -206,23 +250,20 @@ class LeveSelectPanel(discord.ui.Select):
             discord.SelectOption(label="Leve SI", value="SI", emoji="✅"),
             discord.SelectOption(label="Leve NO", value="NO", emoji="❌"),
         ]
-        super().__init__(placeholder="🔧 4. Leve SI/NO...", options=options, row=3)
+        super().__init__(placeholder="🔧 5. Leve SI/NO...", options=options, row=3)
     async def callback(self, interaction: discord.Interaction):
         self.parent_view_ref.leve = self.values[0]
-        await interaction.response.send_message(f"✅ Leve: {self.values[0]}", ephemeral=True)
+        await self.parent_view_ref.update_embed(interaction)
 
 class CalendarioView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
-    @discord.ui.button(label="Crea Evento", style=discord.ButtonStyle.success, emoji="📅", custom_id="crea_evento_v25")
+    @discord.ui.button(label="Crea Evento", style=discord.ButtonStyle.success, emoji="📅", custom_id="crea_evento_v26")
     async def crea_evento(self, interaction: discord.Interaction, button: discord.ui.Button):
-        embed = discord.Embed(
-            title="📅 Crea Evento - Pannello Unico",
-            description="**Tutto nel pannello (SOLO FUTURI):**\n1️⃣ Gioco\n2️⃣ Giorno (da oggi a 31 - solo futuri)\n3️⃣ Player (1-4)\n4️⃣ Leve (SI/NO)\n5️⃣ Ora 24h (es: 21:00)\n\nSeleziona i 4 menu poi clicca il bottone verde! Giorni passati rimossi!",
-            color=0x00ff00
-        )
-        await interaction.response.send_message(embed=embed, view=CreaEventoView(), ephemeral=True)
-    @discord.ui.button(label="Aggiorna", style=discord.ButtonStyle.secondary, emoji="🔄", custom_id="aggiorna_cal_v25")
+        view = CreaEventoView()
+        embed = get_main_embed(view)
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+    @discord.ui.button(label="Aggiorna", style=discord.ButtonStyle.secondary, emoji="🔄", custom_id="aggiorna_cal_v26")
     async def aggiorna(self, interaction: discord.Interaction, button: discord.ui.Button):
         cal_text, event_list = build_calendar_text()
         embed = create_calendar_embed(cal_text, event_list)
@@ -234,7 +275,7 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 
 @bot.event
 async def on_ready():
-    print(f"✅ Blackout404 v25 online come {bot.user}")
+    print(f"✅ Blackout404 v26 online come {bot.user}")
     bot.add_view(CalendarioView())
     try:
         synced = await bot.tree.sync()
@@ -242,7 +283,7 @@ async def on_ready():
     except Exception as e:
         print(f"Errore sync: {e}")
 
-@bot.tree.command(name="calendario", description="📅 Calendario Blackout404 v25")
+@bot.tree.command(name="calendario", description="📅 Calendario Blackout404 v26")
 async def calendario_slash(interaction: discord.Interaction):
     await interaction.response.defer()
     cal_text, event_list = build_calendar_text()
@@ -251,7 +292,7 @@ async def calendario_slash(interaction: discord.Interaction):
 
 @bot.tree.command(name="ping", description="Check ONLINE")
 async def ping_slash(interaction: discord.Interaction):
-    await interaction.response.send_message("🏴 Blackout404 v25 ONLINE!")
+    await interaction.response.send_message("🏴 Blackout404 v26 ONLINE!")
 
 keep_alive()
 bot.run(os.getenv("DISCORD_TOKEN"))
