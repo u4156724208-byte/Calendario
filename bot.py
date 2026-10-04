@@ -1,9 +1,8 @@
-import os, threading
+
+import os, threading, datetime
 from flask import Flask
 import discord
 from discord.ext import commands
-from PIL import Image, ImageDraw, ImageFont
-import io
 
 app = Flask(__name__)
 @app.route("/")
@@ -21,65 +20,66 @@ async def on_ready():
     print(f"Online come {bot.user}")
     try:
         await bot.tree.sync()
+        print("Slash syncati")
     except Exception as e:
         print(e)
 
-def create_calendar_image():
-    W, H = 800, 520
-    bg = (54, 57, 63)
-    fg = (255, 255, 255)
-    img = Image.new("RGB", (W, H), bg)
-    draw = ImageDraw.Draw(img)
-    # usa font di default grande
-    try:
-        font_title = ImageFont.truetype("DejaVuSans-Bold.ttf", 34)
-        font_month = ImageFont.truetype("DejaVuSans.ttf", 22)
-        font_head = ImageFont.truetype("DejaVuSans-Bold.ttf", 22)
-        font_day = ImageFont.truetype("DejaVuSans.ttf", 26)
-    except:
-        font_title = ImageFont.load_default()
-        font_month = ImageFont.load_default()
-        font_head = ImageFont.load_default()
-        font_day = ImageFont.load_default()
+# --- MODAL CREAZIONE EVENTO ---
+class CreaEventoModal(discord.ui.Modal, title="Crea Evento"):
+    def __init__(self, giorno: int):
+        super().__init__()
+        self.giorno = giorno
+        self.nome = discord.ui.TextInput(label=f"Evento per il {giorno}/10/2026", placeholder="Es: Torneo, Serata giochi...", max_length=100)
+        self.orario = discord.ui.TextInput(label="Orario", placeholder="Es: 21:00", required=False, max_length=20)
+        self.add_item(self.nome)
+        self.add_item(self.orario)
 
-    draw.text((30, 18), "CALENDARIO GIOCHI", font=font_title, fill=fg)
-    draw.text((30, 62), "Ottobre 2026", font=font_month, fill=(180,180,180))
+    async def on_submit(self, interaction: discord.Interaction):
+        embed = discord.Embed(
+            title=f"Evento creato per il {self.giorno}/10/2026",
+            description=f"**{self.nome.value}**\nOrario: {self.orario.value or 'Da definire'}",
+            color=0x00ff88
+        )
+        embed.set_footer(text=f"Creato da {interaction.user.display_name}")
+        await interaction.response.send_message(embed=embed)
 
-    # griglia
-    cols = ["LUN","MAR","MER","GIO","VEN","SAB","DOM"]
-    x_start = 30
-    y_start = 120
-    col_w = 106
-    row_h = 55
+class CalendarioView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=180)
+        oggi = datetime.date.today().day
+        # Se vuoi forzare ottobre 2026, usa oggi = 5 per test, altrimenti datetime.date.today()
+        # Per prod con mese corrente: blocca < oggi
+        for giorno in range(1, 32):
+            disabilitato = giorno < oggi  # <--- esclude giorni precedenti a oggi
+            btn = discord.ui.Button(
+                label=f"{giorno:02d}",
+                style=discord.ButtonStyle.secondary if disabilitato else discord.ButtonStyle.primary,
+                disabled=disabilitato,
+                row=(giorno-1)//5,
+                custom_id=f"giorno_{giorno}"
+            )
+            btn.callback = self.make_callback(giorno)
+            self.add_item(btn)
 
-    # header giorni
-    for i, c in enumerate(cols):
-        x = x_start + i*col_w
-        draw.text((x+18, y_start), c, font=font_head, fill=fg)
+    def make_callback(self, giorno: int):
+        async def callback(interaction: discord.Interaction):
+            modal = CreaEventoModal(giorno)
+            await interaction.response.send_modal(modal)
+        return callback
 
-    # giorni: 1 Ott 2026 = Giovedi (indice 3)
-    days = [""]*3 + [f"{d:02d}" for d in range(1, 32)]
-    y = y_start + row_h
-    for week in range(0, len(days), 7):
-        for col in range(7):
-            idx = week + col
-            if idx < len(days) and days[idx]:
-                x = x_start + col*col_w + 26
-                draw.text((x, y), days[idx], font=font_day, fill=fg)
-        y += row_h
-
-    buf = io.BytesIO()
-    img.save(buf, format="PNG")
-    buf.seek(0)
-    return buf
-
-@bot.tree.command(name="calendario", description="Mostra calendario giochi")
+@bot.tree.command(name="calendario", description="Mostra calendario giochi cliccabile")
 async def calendario(interaction: discord.Interaction):
-    await interaction.response.defer()
-    buf = create_calendar_image()
-    file = discord.File(buf, filename="calendario.png")
-    embed = discord.Embed(title="CALENDARIO GIOCHI - Ottobre 2026", color=0x2f3136)
-    embed.set_image(url="attachment://calendario.png")
-    await interaction.followup.send(embed=embed, file=file)
+    oggi = datetime.date.today()
+    descrizione = f"Ottobre {oggi.year}\nClicca un giorno per creare un evento.\nGiorni prima di oggi ({oggi.day:02d}) non cliccabili."
+    
+    embed = discord.Embed(
+        title="CALENDARIO GIOCHI",
+        description=descrizione,
+        color=0x2f3136
+    )
+    embed.set_footer(text="Seleziona un giorno dal calendario qui sotto")
+    
+    view = CalendarioView()
+    await interaction.response.send_message(embed=embed, view=view)
 
 bot.run(os.getenv("DISCORD_TOKEN"))
