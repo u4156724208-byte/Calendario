@@ -1,3 +1,4 @@
+
 import os, threading
 from flask import Flask
 import discord
@@ -22,18 +23,20 @@ async def on_ready():
     except Exception as e:
         print(e)
 
+def build_grid():
+    # Ottobre 2026: 1 = giovedi (indice 3)
+    days = [""]*3 + [f"{i:02d}" for i in range(1, 32)]
+    rows = []
+    rows.append("LUN  MAR  MER  GIO  VEN  SAB  DOM")
+    for i in range(0, len(days), 7):
+        week = days[i:i+7]
+        line = "".join(f"{d:>4}" if d else "    " for d in week).rstrip()
+        rows.append(line)
+    return "```\n" + "\n".join(rows) + "\n```"
+
 @bot.tree.command(name="calendario", description="Mostra calendario giochi")
 async def calendario(interaction: discord.Interaction):
-    grid = (
-        "```\n"
-        "LUN  MAR  MER  GIO  VEN  SAB  DOM\n"
-        "                 01   02   03\n"
-        " 04   05   06   07   08   09   10\n"
-        " 11   12   13   14   15   16   17\n"
-        " 18   19   20   21   22   23   24\n"
-        " 25   26   27   28   29   30   31\n"
-        "```"
-    )
+    grid = build_grid()
     embed = discord.Embed(
         title="CALENDARIO GIOCHI",
         description=f"Ottobre 2026\n{grid}",
