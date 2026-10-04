@@ -53,52 +53,60 @@ def genera_embed_calendario():
         embed.add_field(name="", value=lista, inline=False)
     return embed
 
-class EventoModal(discord.ui.Modal, title="Crea Evento"):
-    giorno = discord.ui.TextInput(label="Giorno", placeholder="12", max_length=2)
-    ora = discord.ui.TextInput(label="Ora", placeholder="02:00")
+class EventoModal(discord.ui.Modal, title="Crea Nuovo Evento"):
+    giorno = discord.ui.TextInput(label="Giorno (es. 12)", placeholder="12", max_length=2)
+    ora = discord.ui.TextInput(label="Ora (es. 21:00)", placeholder="02:00")
     avversario = discord.ui.TextInput(label="Avversario", placeholder="WarDogs")
+    slot = discord.ui.TextInput(label="Slot", placeholder="1/3", required=False, default="1/3")
+    live = discord.ui.TextInput(label="Live? SI/NO", placeholder="SI", required=False, default="NO")
 
     async def on_submit(self, interaction: discord.Interaction):
         try:
             g = int(self.giorno.value)
-            eventi_db[g] = {"ora": self.ora.value, "vs": self.avversario.value, "slot": "1/3", "live": "NO"}
-            await interaction.response.send_message(f"Evento giorno {g} aggiunto!", ephemeral=True)
+            eventi_db[g] = {
+                "ora": self.ora.value, 
+                "vs": self.avversario.value, 
+                "slot": self.slot.value or "1/3", 
+                "live": self.live.value or "NO"
+            }
+            await interaction.response.send_message(f"✅ Evento del giorno {g} aggiunto!", ephemeral=True)
         except:
-            await interaction.response.send_message("Giorno non valido", ephemeral=True)
+            await interaction.response.send_message("❌ Giorno non valido", ephemeral=True)
 
 @bot.event
 async def on_ready():
-    print(f"ONLINE come {bot.user}")
-    await bot.tree.sync()
+    print(f"Loggato come {bot.user}")
+    try:
+        synced = await bot.tree.sync()
+        print(f"Sincronizzati {len(synced)} comandi: {[c.name for c in synced]}")
+    except Exception as e:
+        print(e)
 
-@bot.tree.command(name="calendario", description="Mostra calendario")
+@bot.tree.command(name="calendario", description="Mostra il calendario giochi")
 async def calendario(interaction: discord.Interaction):
     embed = genera_embed_calendario()
     view = discord.ui.View(timeout=None)
-    btn = discord.ui.Button(label="Crea Evento", style=discord.ButtonStyle.success, emoji="\U0001f4c5")
-    async def cb(i: discord.Interaction):
-        await i.response.send_modal(EventoModal())
-    btn.callback = cb
-    view.add_item(btn)
+    btn_crea = discord.ui.Button(label="Crea Evento", style=discord.ButtonStyle.success, emoji="📅")
+    async def crea_callback(inter: discord.Interaction):
+        await inter.response.send_modal(EventoModal())
+    btn_crea.callback = crea_callback
+    view.add_item(btn_crea)
     await interaction.response.send_message(embed=embed, view=view)
 
-@bot.tree.command(name="reset", description="Resetta tutti gli eventi del calendario (solo admin)")
+@bot.tree.command(name="reset", description="Resetta tutti gli eventi (solo admin)")
 @app_commands.default_permissions(administrator=True)
 async def reset_eventi(interaction: discord.Interaction):
-    # Risposta istantanea per evitare "L'applicazione non ha risposto"
     await interaction.response.defer(ephemeral=True)
-    
     count = len(eventi_db)
     eventi_db.clear()
-    
-    await interaction.followup.send(f"🗑️ Reset fatto! Cancellati {count} eventi. Il calendario è vuoto.", ephemeral=True)
+    await interaction.followup.send(f"🗑️ Reset fatto! Cancellati {count} eventi. Calendario vuoto.", ephemeral=True)
 
 if __name__ == "__main__":
     threading.Thread(target=run_web, daemon=True).start()
     time.sleep(1)
     TOKEN = os.environ.get("DISCORD_TOKEN")
     if not TOKEN:
-        print("ATTENZIONE: DISCORD_TOKEN non impostato su Render! Servizio web resta online per far passare il deploy.")
+        print("ATTENZIONE: DISCORD_TOKEN non impostato su Render!")
         while True:
             time.sleep(60)
     else:
