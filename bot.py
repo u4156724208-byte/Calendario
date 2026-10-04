@@ -56,8 +56,7 @@ def build_calendar_text(year=2026, month=10):
         hour = ev.get('hour','?')
         partecipanti = ev.get('partecipanti', [])
         count = len(partecipanti) if partecipanti else 1
-        event_list += f"Giorno {d} ore {hour} | {ev.get('game_name','?')} | {count}/{players_max} | Live:{ev.get('leve','?')}
-"
+        event_list += f"Giorno {d} ore {hour} | {ev.get('game_name','?')} | {count}/{players_max} | Live:{ev.get('leve','?')}\n"
   if not event_list:
     event_list = "Nessun evento. Clicca Crea Evento!"
   return "", event_list
