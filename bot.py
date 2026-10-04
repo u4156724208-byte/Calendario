@@ -1,4 +1,3 @@
-
 import os, threading, datetime
 from flask import Flask
 import discord
@@ -20,8 +19,9 @@ async def on_ready():
     print(f"Online come {bot.user}")
     try:
         await bot.tree.sync()
+        print("Sync OK")
     except Exception as e:
-        print(e)
+        print(f"Sync error: {e}")
 
 class CreaEventoModal(discord.ui.Modal, title="Crea Evento"):
     def __init__(self, giorno: int):
@@ -33,44 +33,65 @@ class CreaEventoModal(discord.ui.Modal, title="Crea Evento"):
         self.add_item(self.orario)
 
     async def on_submit(self, interaction: discord.Interaction):
-        embed = discord.Embed(
-            title=f"Evento {self.giorno:02d}/10/2026",
-            description=f"**{self.nome.value}**\nOrario: {self.orario.value or 'Da definire'}",
-            color=0x00ff88
-        )
-        embed.set_footer(text=f"Creato da {interaction.user.display_name}")
-        await interaction.response.send_message(embed=embed)
+        try:
+            embed = discord.Embed(
+                title=f"Evento {self.giorno:02d}/10/2026",
+                description=f"**{self.nome.value}**\nOrario: {self.orario.value or 'Da definire'}",
+                color=0x00ff88
+            )
+            embed.set_footer(text=f"Creato da {interaction.user.display_name}")
+            await interaction.response.send_message(embed=embed)
+        except Exception as e:
+            print(f"Modal error: {e}")
 
 class GiornoSelectFuturo(discord.ui.Select):
-    def __init__(self):
-        oggi = datetime.date.today().day
+    def __init__(self, giorni, placeholder):
         options = [
             discord.SelectOption(label=f"{g:02d}/10/2026", value=str(g), emoji="\U0001f4c5")
-            for g in range(oggi, 32)
+            for g in giorni
         ]
-        super().__init__(placeholder=f"Giorno disponibile: {oggi:02d}-31", min_values=1, max_values=1, options=options)
+        super().__init__(placeholder=placeholder, min_values=1, max_values=1, options=options)
 
     async def callback(self, interaction: discord.Interaction):
-        giorno = int(self.values[0])
-        modal = CreaEventoModal(giorno)
-        await interaction.response.send_modal(modal)
+        try:
+            giorno = int(self.values[0])
+            modal = CreaEventoModal(giorno)
+            await interaction.response.send_modal(modal)
+        except Exception as e:
+            print(f"Select callback error: {e}")
+            if not interaction.response.is_done():
+                await interaction.response.send_message(f"Errore: {e}", ephemeral=True)
 
 class SelectGiornoView(discord.ui.View):
     def __init__(self):
-        super().__init__(timeout=120)
-        self.add_item(GiornoSelectFuturo())
+        super().__init__(timeout=180)
+        oggi = datetime.date.today().day
+        # FIX: max 25 opzioni per select - dividiamo
+        futuri = list(range(oggi, 32))
+        chunk1 = futuri[:25]
+        chunk2 = futuri[25:]
+
+        if chunk1:
+            self.add_item(GiornoSelectFuturo(chunk1, f"Giorni {chunk1[0]:02d}-{chunk1[-1]:02d}"))
+        if chunk2:
+            self.add_item(GiornoSelectFuturo(chunk2, f"Giorni {chunk2[0]:02d}-{chunk2[-1]:02d}"))
 
 class CreaEventoButton(discord.ui.Button):
     def __init__(self):
         super().__init__(label="Crea Evento", style=discord.ButtonStyle.green, emoji="\U0001f4c5")
 
     async def callback(self, interaction: discord.Interaction):
-        view = SelectGiornoView()
-        await interaction.response.send_message(
-            "Scegli il giorno (solo giorni futuri):",
-            view=view,
-            ephemeral=True
-        )
+        try:
+            view = SelectGiornoView()
+            await interaction.response.send_message(
+                "Scegli il giorno (solo futuri, passati rimossi):",
+                view=view,
+                ephemeral=True
+            )
+        except Exception as e:
+            print(f"Button error: {e}")
+            if not interaction.response.is_done():
+                await interaction.response.send_message(f"Errore: {e}", ephemeral=True)
 
 class CalendarioView(discord.ui.View):
     def __init__(self):
@@ -78,10 +99,8 @@ class CalendarioView(discord.ui.View):
         self.add_item(CreaEventoButton())
 
 def build_grid():
-    # Header e numeri stessa larghezza 4 -> colonne perfettamente dritte
     cols = ["LUN","MAR","MER","GIO","VEN","SAB","DOM"]
     header = "".join(f"{c:>4}" for c in cols)
-    # 1 Ott 2026 = Giovedi (indice 3)
     giorni = [""]*3 + [f"{d:02d}" for d in range(1, 32)]
     rows = [header]
     for i in range(0, len(giorni), 7):
@@ -92,13 +111,17 @@ def build_grid():
 
 @bot.tree.command(name="calendario", description="Mostra calendario giochi")
 async def calendario(interaction: discord.Interaction):
-    grid = build_grid()
-    # NIENTE scritta CALENDARIO GIOCHI - solo Ottobre 2026 + griglia dritta
-    embed = discord.Embed(
-        description=f"Ottobre 2026\n{grid}",
-        color=0x2f3136
-    )
-    view = CalendarioView()
-    await interaction.response.send_message(embed=embed, view=view)
+    try:
+        grid = build_grid()
+        embed = discord.Embed(
+            description=f"Ottobre 2026\n{grid}",
+            color=0x2f3136
+        )
+        view = CalendarioView()
+        await interaction.response.send_message(embed=embed, view=view)
+    except Exception as e:
+        print(f"calendario error: {e}")
+        if not interaction.response.is_done():
+            await interaction.response.send_message(f"Errore: {e}", ephemeral=True)
 
 bot.run(os.getenv("DISCORD_TOKEN"))
