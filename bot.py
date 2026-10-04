@@ -28,7 +28,7 @@ async def calendario(interaction: discord.Interaction):
         "```\n"
         "LUN  MAR  MER  GIO  VEN  SAB  DOM\n"
         "                 01   02   03\n"
-        " 04  [05] [06]  07   08   09   10\n"
+        " 04   05   06   07   08   09   10\n"
         " 11   12   13   14   15   16   17\n"
         " 18   19   20   21   22   23   24\n"
         " 25   26   27   28   29   30   31\n"
