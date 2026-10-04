@@ -10,7 +10,7 @@ from threading import Thread
 app = Flask(__name__)
 @app.route('/')
 def home():
-    return "Blackout404 v36 LIVE DROPDOWN SI NO - ONLINE!"
+    return "Blackout404 v37 FIX TIMEOUT - ONLINE!"
 
 def run_web():
     port = int(os.environ.get("PORT", 10000))
@@ -91,17 +91,17 @@ def create_calendar_embed(cal_text, event_list):
 def get_main_embed(view):
     today = datetime.datetime.now().day
     now_hour = datetime.datetime.now().hour
-    game_txt = GAMES[view.game_id]['name'] if view.game_id else "❌"
-    day_txt = view.day if view.day else "❌"
-    hour_txt = view.hour if view.hour else "❌"
-    players_txt = view.players if view.players else "❌"
-    live_txt = view.leve if view.leve else "❌"
+    game_txt = GAMES[view.game_id]['name'] if view.game_id else "❌ non scelto"
+    day_txt = view.day if view.day else "❌ non scelto"
+    hour_txt = view.hour if view.hour else "❌ non scelto"
+    players_txt = view.players if view.players else "❌ non scelto"
+    live_txt = view.leve if view.leve else "❌ non scelto"
     if view.day and int(view.day) == today:
         hour_info = f"da {now_hour+1}:00 a 23:00"
     else:
         hour_info = "00:00-23:00"
-    desc = f"Gioco: {game_txt}\nGiorno: {day_txt} (da {today} a 31)\nOra: {hour_txt} ({hour_info})\nPlayer: {players_txt}\nLive: {live_txt}"
-    return discord.Embed(title="Crea Evento", description=desc, color=0x00FF7F)
+    desc = f"Gioco: {game_txt}\nGiorno: {day_txt} (da {today} a 31)\nOra: {hour_txt} ({hour_info})\nPlayer: {players_txt}\nLive: {live_txt}\n\nSeleziona tutti i campi sopra, l'evento si crea automatico al punto 5!"
+    return discord.Embed(title="📅 Crea Evento - 5 punti", description=desc, color=0x00FF7F)
 
 class CreaEventoView(discord.ui.View):
     def __init__(self):
@@ -121,41 +121,40 @@ class CreaEventoView(discord.ui.View):
         embed = get_main_embed(self)
         try:
             await interaction.response.edit_message(embed=embed, view=self)
-        except:
+        except discord.errors.InteractionResponded:
+            await interaction.followup.edit_message(interaction.message.id, embed=embed, view=self)
+        except Exception as e:
+            print(f"update error: {e}")
             try:
-                await interaction.followup.edit_message(interaction.message.id, embed=embed, view=self)
+                await interaction.response.defer(ephemeral=True)
             except:
-                await interaction.response.defer()
+                pass
 
-    @discord.ui.button(label="CONFERMA", style=discord.ButtonStyle.success, row=4)
-    async def conferma(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if not all([self.game_id, self.day, self.hour, self.players, self.leve]):
-            missing = []
-            if not self.game_id: missing.append("Gioco")
-            if not self.day: missing.append("Giorno")
-            if not self.hour: missing.append("Ora")
-            if not self.players: missing.append("Player")
-            if not self.leve: missing.append("Live")
-            embed = get_main_embed(self)
-            embed.color = 0x00FF7F
-            embed.add_field(name="Manca", value=", ".join(missing))
-            await interaction.response.edit_message(embed=embed, view=self)
-            return
-        date_key = f"2026-10-{int(self.day):02d}"
-        if date_key not in events_db:
-            events_db[date_key] = []
-        events_db[date_key].append({
-            "game": self.game_id,
-            "game_name": GAMES[self.game_id]['name'],
-            "players": self.players,
-            "leve": self.leve,
-            "hour": self.hour,
-            "author": str(interaction.user.display_name),
-            "partecipanti": [str(interaction.user.display_name)]
-        })
-        events_db[date_key] = sorted(events_db[date_key], key=lambda x: x["hour"])
-        save_events(events_db)
-        await interaction.response.edit_message(embed=discord.Embed(title="Evento Creato!", description=f"🟩 Giorno {self.day} ore {self.hour}\n{GAMES[self.game_id]['emoji']} {GAMES[self.game_id]['name']} | {len(events_db[date_key][-1]['partecipanti'])}/{self.players} | Live:{self.leve}", color=0x00FF7F), view=None)
+    async def try_auto_create(self, interaction):
+        # Se tutti i campi sono pieni, crea automatico
+        if all([self.game_id, self.day, self.hour, self.players, self.leve]):
+            date_key = f"2026-10-{int(self.day):02d}"
+            if date_key not in events_db:
+                events_db[date_key] = []
+            events_db[date_key].append({
+                "game": self.game_id,
+                "game_name": GAMES[self.game_id]['name'],
+                "players": self.players,
+                "leve": self.leve,
+                "hour": self.hour,
+                "author": str(interaction.user.display_name),
+                "partecipanti": [str(interaction.user.display_name)]
+            })
+            events_db[date_key] = sorted(events_db[date_key], key=lambda x: x["hour"])
+            save_events(events_db)
+            embed_ok = discord.Embed(title="✅ Evento Creato!", description=f"🟩 Giorno {self.day} ore {self.hour} VERDE nel calendario!\n{GAMES[self.game_id]['emoji']} {GAMES[self.game_id]['name']} | 1/{self.players} | Live:{self.leve}", color=0x00FF7F)
+            try:
+                await interaction.followup.edit_message(interaction.message.id, embed=embed_ok, view=None)
+            except:
+                try:
+                    await interaction.response.edit_message(embed=embed_ok, view=None)
+                except:
+                    pass
 
 class GameSelectPanel(discord.ui.Select):
     def __init__(self, parent_view):
@@ -227,10 +226,14 @@ class LiveSelectPanel(discord.ui.Select):
             discord.SelectOption(label="SI", value="SI", description="Live attivo"),
             discord.SelectOption(label="NO", value="NO", description="Live disattivo"),
         ]
-        super().__init__(placeholder="5. Live: SI/NO...", options=options, row=4)
+        super().__init__(placeholder="5. Live: SI/NO... (conferma finale)", options=options, row=4)
     async def callback(self, interaction: discord.Interaction):
         self.parent_view_ref.leve = self.values[0]
+        # update + auto create se completo
         await self.parent_view_ref.update_embed(interaction)
+        # piccolo delay per far vedere update, poi autocrea
+        if all([self.parent_view_ref.game_id, self.parent_view_ref.day, self.parent_view_ref.hour, self.parent_view_ref.players, self.parent_view_ref.leve]):
+            await self.parent_view_ref.try_auto_create(interaction)
 
 class JoinEventButton(discord.ui.Button):
     def __init__(self, date_key, event_idx, event):
@@ -246,19 +249,23 @@ class JoinEventButton(discord.ui.Button):
         self.event_idx = event_idx
 
     async def callback(self, interaction: discord.Interaction):
+        try:
+            await interaction.response.defer(ephemeral=True)
+        except:
+            pass
         date_key = self.date_key
         if date_key not in events_db or self.event_idx >= len(events_db[date_key]):
-            await interaction.response.send_message("Evento non trovato", ephemeral=True)
+            await interaction.followup.send("Evento non trovato", ephemeral=True)
             return
         ev = events_db[date_key][self.event_idx]
         partecipanti = ev.get('partecipanti', [])
         user_name = str(interaction.user.display_name)
         if user_name in partecipanti:
-            await interaction.response.send_message(f"Sei già dentro! {', '.join(partecipanti)}", ephemeral=True)
+            await interaction.followup.send(f"Sei già dentro! {', '.join(partecipanti)}", ephemeral=True)
             return
         max_p = int(ev.get('players',4))
         if len(partecipanti) >= max_p:
-            await interaction.response.send_message(f"Pieno! {max_p}/{max_p}", ephemeral=True)
+            await interaction.followup.send(f"Pieno! {max_p}/{max_p}", ephemeral=True)
             return
         partecipanti.append(user_name)
         ev['partecipanti'] = partecipanti
@@ -266,7 +273,10 @@ class JoinEventButton(discord.ui.Button):
         cal_text, event_list = build_calendar_text()
         embed = create_calendar_embed(cal_text, event_list)
         view = CalendarioViewDynamic()
-        await interaction.response.edit_message(embed=embed, view=view)
+        try:
+            await interaction.message.edit(embed=embed, view=view)
+        except:
+            pass
         await interaction.followup.send(f"Partecipato! {date_key.split('-')[2]} ore {ev.get('hour')} - {len(partecipanti)}/{max_p}: {', '.join(partecipanti)}", ephemeral=True)
 
 class CalendarioViewDynamic(discord.ui.View):
@@ -286,11 +296,22 @@ class CalendarioViewDynamic(discord.ui.View):
                 self.add_item(btn)
                 count += 1
 
-    @discord.ui.button(label="Crea Evento", style=discord.ButtonStyle.success, emoji="📅", custom_id="crea_evento_v36")
+    @discord.ui.button(label="Crea Evento", style=discord.ButtonStyle.success, emoji="📅", custom_id="crea_evento_v37")
     async def crea_evento(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # RISPOSTA IMMEDIATA - FIX TIMEOUT
         view = CreaEventoView()
         embed = get_main_embed(view)
-        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+        try:
+            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+        except discord.errors.InteractionResponded:
+            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+        except Exception as e:
+            print(f"crea_evento error: {e}")
+            try:
+                await interaction.response.defer(ephemeral=True)
+                await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+            except:
+                pass
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -298,7 +319,7 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 
 @bot.event
 async def on_ready():
-    print(f"✅ Blackout404 v36 online come {bot.user}")
+    print(f"✅ Blackout404 v37 online come {bot.user}")
     bot.add_view(CalendarioViewDynamic())
     try:
         synced = await bot.tree.sync()
@@ -306,7 +327,7 @@ async def on_ready():
     except Exception as e:
         print(f"Errore sync: {e}")
 
-@bot.tree.command(name="calendario", description="Calendario Blackout404 v36")
+@bot.tree.command(name="calendario", description="Calendario Blackout404 v37")
 async def calendario_slash(interaction: discord.Interaction):
     await interaction.response.defer()
     cal_text, event_list = build_calendar_text()
@@ -315,7 +336,7 @@ async def calendario_slash(interaction: discord.Interaction):
 
 @bot.tree.command(name="ping", description="Check ONLINE")
 async def ping_slash(interaction: discord.Interaction):
-    await interaction.response.send_message("Blackout404 v36 LIVE DROPDOWN ONLINE!")
+    await interaction.response.send_message("Blackout404 v37 FIX TIMEOUT ONLINE!")
 
 keep_alive()
 bot.run(os.getenv("DISCORD_TOKEN"))
