@@ -9,7 +9,7 @@ from threading import Thread
 app = Flask(__name__)
 @app.route('/')
 def home():
-    return "Blackout404 v23 FIX - ONLINE!"
+    return "Blackout404 v25 SOLO FUTURI FIX PANNELLO - ONLINE!"
 
 def run_web():
     port = int(os.environ.get("PORT", 10000))
@@ -81,7 +81,7 @@ def create_calendar_embed(cal_text, event_list):
     if len(desc) > 3500:
         desc = desc[:3500] + "\n..."
     embed = discord.Embed(title="CALENDARIO GIOCHI - Blackout404", description=desc, color=0x2f3136)
-    embed.set_footer(text="v23 FIX • Giorni ordinati • 24h • /calendario")
+    embed.set_footer(text="v25 SOLO FUTURI FIX PANNELLO • Giorni da oggi • 24h • /calendario")
     return embed
 
 class HourModal(discord.ui.Modal):
@@ -170,12 +170,17 @@ class GameSelectPanel(discord.ui.Select):
 class DaySelectPanel(discord.ui.Select):
     def __init__(self, parent_view):
         self.parent_view_ref = parent_view
+        # TOGLI GIORNI PRECEDENTI A OGGI
         today = datetime.datetime.now().day
-        # giorni in ORDINE
-        options = [discord.SelectOption(label=f"Giorno {d}", value=str(d)) for d in range(1, 32)]
-        # Discord max 25 opzioni, mostriamo 1-25, poi 26-31 come seconda pagina non serve, tronchiamo a 25
-        # Per mostrare tutti 1-31 ordinati, facciamo 1-25 qui
-        super().__init__(placeholder="📅 2. Giorno (1-31 ordinato)...", options=options[:25], row=1)
+        current_month = datetime.datetime.now().month
+        # Se siamo in ottobre 2026, partiamo da oggi, altrimenti se mese diverso mostriamo tutto (per test)
+        # Per richiesta: solo da oggi in poi
+        start_day = today if current_month == 10 else today
+        # Solo giorni da oggi a 31
+        options = [discord.SelectOption(label=f"Giorno {d}", value=str(d)) for d in range(start_day, 32)]
+        if not options:  # se siamo a fine mese, mostra almeno domani del mese prossimo (fallback)
+            options = [discord.SelectOption(label=f"Giorno {d}", value=str(d)) for d in range(start_day, 32)]
+        super().__init__(placeholder=f"📅 2. Giorno (da {start_day} a 31 - solo futuri)...", options=options[:25], row=1)
     async def callback(self, interaction: discord.Interaction):
         self.parent_view_ref.day = self.values[0]
         await interaction.response.send_message(f"✅ Giorno: {self.values[0]}", ephemeral=True)
@@ -209,15 +214,15 @@ class LeveSelectPanel(discord.ui.Select):
 class CalendarioView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
-    @discord.ui.button(label="Crea Evento", style=discord.ButtonStyle.success, emoji="📅", custom_id="crea_evento_v23")
+    @discord.ui.button(label="Crea Evento", style=discord.ButtonStyle.success, emoji="📅", custom_id="crea_evento_v25")
     async def crea_evento(self, interaction: discord.Interaction, button: discord.ui.Button):
         embed = discord.Embed(
             title="📅 Crea Evento - Pannello Unico",
-            description="**Tutto nel pannello:**\n1️⃣ Gioco\n2️⃣ Giorno (1-31 ordinato)\n3️⃣ Player (1-4)\n4️⃣ Leve (SI/NO)\n5️⃣ Ora 24h (es: 21:00)\n\nSeleziona i 4 menu poi clicca il bottone verde!",
+            description="**Tutto nel pannello (SOLO FUTURI):**\n1️⃣ Gioco\n2️⃣ Giorno (da oggi a 31 - solo futuri)\n3️⃣ Player (1-4)\n4️⃣ Leve (SI/NO)\n5️⃣ Ora 24h (es: 21:00)\n\nSeleziona i 4 menu poi clicca il bottone verde! Giorni passati rimossi!",
             color=0x00ff00
         )
         await interaction.response.send_message(embed=embed, view=CreaEventoView(), ephemeral=True)
-    @discord.ui.button(label="Aggiorna", style=discord.ButtonStyle.secondary, emoji="🔄", custom_id="aggiorna_cal_v23")
+    @discord.ui.button(label="Aggiorna", style=discord.ButtonStyle.secondary, emoji="🔄", custom_id="aggiorna_cal_v25")
     async def aggiorna(self, interaction: discord.Interaction, button: discord.ui.Button):
         cal_text, event_list = build_calendar_text()
         embed = create_calendar_embed(cal_text, event_list)
@@ -229,7 +234,7 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 
 @bot.event
 async def on_ready():
-    print(f"✅ Blackout404 v23 online come {bot.user}")
+    print(f"✅ Blackout404 v25 online come {bot.user}")
     bot.add_view(CalendarioView())
     try:
         synced = await bot.tree.sync()
@@ -237,7 +242,7 @@ async def on_ready():
     except Exception as e:
         print(f"Errore sync: {e}")
 
-@bot.tree.command(name="calendario", description="📅 Calendario Blackout404 v23")
+@bot.tree.command(name="calendario", description="📅 Calendario Blackout404 v25")
 async def calendario_slash(interaction: discord.Interaction):
     await interaction.response.defer()
     cal_text, event_list = build_calendar_text()
@@ -246,7 +251,7 @@ async def calendario_slash(interaction: discord.Interaction):
 
 @bot.tree.command(name="ping", description="Check ONLINE")
 async def ping_slash(interaction: discord.Interaction):
-    await interaction.response.send_message("🏴 Blackout404 v23 ONLINE!")
+    await interaction.response.send_message("🏴 Blackout404 v25 ONLINE!")
 
 keep_alive()
 bot.run(os.getenv("DISCORD_TOKEN"))
