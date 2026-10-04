@@ -10,7 +10,7 @@ from threading import Thread
 app = Flask(__name__)
 @app.route('/')
 def home():
-  return "CALENDARIO Blackout404 v49 SOLO TESTO BIANCO v49 - ARC DBD WARDOGS v49 ONLINE!"
+  return "CALENDARIO Blackout404 v50 SOLO TESTO BIANCO v50 - ARC DBD WARDOGS v50 ONLINE!"
 
 def run_web():
   port = int(os.environ.get("PORT", 10000))
@@ -68,12 +68,7 @@ def create_calendar_embed(cal_text, event_list):
     desc = desc[:1900] + "\n..."
   return desc
 
-def create_calendar_embed_old(cal_text, event_list):
-  desc = event_list
-  if len(desc) > 3500:
-    desc = desc[:3500] + "\n..."
-  embed = discord.Embed(title="CALENDARIO GIOCHI", description=desc, color=0x2B2D31)
-  return embed
+# vecchio embed rimosso
 
 
 
@@ -91,8 +86,7 @@ def get_main_text(view):
     hour_info = "00:00-23:00"
   return f"Crea Evento\nGioco: {game_txt}\nGiorno: {day_txt} (da {today} a 31)\nOra: {hour_txt} ({hour_info})\nPlayer: {players_txt}\nLive: {live_txt}"
 
-def get_main_embed(view):
-  return discord.Embed(title="Crea Evento", description=get_main_text(view), color=0x2B2D31)
+# EMBED TOLTO - solo testo bianco
 
 
 class CreaEventoView(discord.ui.View):
@@ -211,10 +205,9 @@ class ConfermaButton(discord.ui.Button):
       if not v.hour: miss.append("Ora")
       if not v.players: miss.append("Player")
       if not v.leve: miss.append("Live")
-      embed=get_main_embed(v)
-      embed.add_field(name="Manca", value=", ".join(miss))
+      text_manca = get_main_text(v) + f"\n\nManca: {', '.join(miss)}"
       v.refresh_items()
-      await interaction.response.edit_message(embed=embed, view=v)
+      await interaction.response.edit_message(content=text_manca, embed=None, view=v)
       return
     key=f"2026-10-{int(v.day):02d}"
     if key not in events_db:
@@ -284,17 +277,17 @@ class CalendarioViewDynamic(discord.ui.View):
           break
         self.add_item(btn)
         count+=1
-  @discord.ui.button(label="Crea Evento", style=discord.ButtonStyle.success, custom_id="crea_evento_v49")
+  @discord.ui.button(label="Crea Evento", style=discord.ButtonStyle.success, custom_id="crea_evento_v50")
   async def crea_evento(self, interaction, button):
     view=CreaEventoView()
-    embed=get_main_embed(view)
+    text=get_main_text(view)
     try:
-      await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+      await interaction.response.send_message(content=text, view=view, ephemeral=True)
     except Exception as e:
       print(f"crea_evento error: {e}")
       try:
         await interaction.response.defer(ephemeral=True)
-        await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+        await interaction.followup.send(content=text, view=view, ephemeral=True)
       except:
         pass
 
@@ -321,7 +314,7 @@ async def calendario_slash(interaction):
 
 @bot.tree.command(name="ping", description="Check ONLINE")
 async def ping_slash(interaction):
-  await interaction.response.send_message("Blackout404 v49 CALENDARIO GIOCHI ONLINE!")
+  await interaction.response.send_message("Blackout404 v50 CALENDARIO GIOCHI ONLINE!")
 
 keep_alive()
 bot.run(os.getenv("DISCORD_TOKEN"))
