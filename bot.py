@@ -4,6 +4,7 @@ import time
 import threading
 import discord
 from discord.ext import commands
+from discord import app_commands
 from flask import Flask
 
 app = Flask(__name__)
@@ -80,6 +81,17 @@ async def calendario(interaction: discord.Interaction):
     btn.callback = cb
     view.add_item(btn)
     await interaction.response.send_message(embed=embed, view=view)
+
+@bot.tree.command(name="reset", description="Resetta tutti gli eventi del calendario (solo admin)")
+@app_commands.default_permissions(administrator=True)
+async def reset_eventi(interaction: discord.Interaction):
+    # Risposta istantanea per evitare "L'applicazione non ha risposto"
+    await interaction.response.defer(ephemeral=True)
+    
+    count = len(eventi_db)
+    eventi_db.clear()
+    
+    await interaction.followup.send(f"🗑️ Reset fatto! Cancellati {count} eventi. Il calendario è vuoto.", ephemeral=True)
 
 if __name__ == "__main__":
     threading.Thread(target=run_web, daemon=True).start()
