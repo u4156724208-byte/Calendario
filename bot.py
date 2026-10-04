@@ -10,7 +10,7 @@ from threading import Thread
 app = Flask(__name__)
 @app.route('/')
 def home():
-    return "Blackout404 v33 FASCIA ROSSA PULITO - ONLINE!"
+    return "Blackout404 v34 FASCIA VERDE ACCESA PULITO - ONLINE!"
 
 def run_web():
     port = int(os.environ.get("PORT", 10000))
@@ -60,7 +60,7 @@ def build_calendar_text(year=2026, month=10):
             else:
                 key = f"{year}-{month:02d}-{day:02d}"
                 if key in events_db and len(events_db[key])>0:
-                    row_cells.append(f"\u001b[0;31m{day:^3}\u001b[0m ")
+                    row_cells.append(f"\u001b[0;32m{day:^3}\u001b[0m ")
                 else:
                     row_cells.append(f"{day:^4}")
         row = "".join(row_cells)
@@ -76,18 +76,19 @@ def build_calendar_text(year=2026, month=10):
                 hour = ev.get('hour','?')
                 partecipanti = ev.get('partecipanti', [])
                 count = len(partecipanti) if partecipanti else 1
-                event_list += f"🟥 **{d}** {game_emoji} {ev.get('game_name','?')} | {hour} | {count}/{players_max}\n"
+                event_list += f"🟩 **{d}** {game_emoji} {ev.get('game_name','?')} | {hour} | {count}/{players_max}\n"
     return cal_text, event_list
 
 def create_calendar_embed(cal_text, event_list):
     desc = f"**Ottobre 2026**\n```ansi\n{cal_text}\n```\n"
-    desc += event_list if event_list else "*Nessun evento - clicca Crea Evento*"
+    desc += event_list if event_list else ""
     if len(desc) > 3500:
         desc = desc[:3500] + "\n..."
     # FASCIA ROSSA LOGO - embed color rosso
-    embed = discord.Embed(title="CALENDARIO GIOCHI - Blackout404", description=desc, color=0xE10600)
+    embed = discord.Embed(title="CALENDARIO GIOCHI - Blackout404", description=desc, color=0x00FF7F)
     # footer pulito senza scritte v32 - eliminato
-    embed.set_footer(text="Blackout404 • /calendario")
+    # footer rimosso come richiesto
+    embed.set_footer(text="")
     return embed
 
 def get_main_embed(view):
@@ -104,7 +105,7 @@ def get_main_embed(view):
         hour_info = "00:00-23:00"
     desc = f"Gioco: {game_txt}\nGiorno: {day_txt} (da {today} a 31)\nOra: {hour_txt} ({hour_info})\nPlayer: {players_txt}\nLive: {live_txt} (5. scegli SI/NO sotto)"
     # fascia rossa logo anche qui
-    return discord.Embed(title="Crea Evento", description=desc, color=0xE10600)
+    return discord.Embed(title="Crea Evento", description=desc, color=0x00FF7F)
 
 class CreaEventoView(discord.ui.View):
     def __init__(self):
@@ -149,7 +150,7 @@ class CreaEventoView(discord.ui.View):
             if not self.players: missing.append("Player")
             if not self.leve: missing.append("Live")
             embed = get_main_embed(self)
-            embed.color = 0xE10600
+            embed.color = 0x00FF7F
             embed.add_field(name="Manca", value=", ".join(missing))
             await interaction.response.edit_message(embed=embed, view=self)
             return
@@ -167,7 +168,7 @@ class CreaEventoView(discord.ui.View):
         })
         events_db[date_key] = sorted(events_db[date_key], key=lambda x: x["hour"])
         save_events(events_db)
-        await interaction.response.edit_message(embed=discord.Embed(title="Evento Creato!", description=f"🟥 Giorno {self.day} ore {self.hour} ROSSO nel calendario!\n{GAMES[self.game_id]['emoji']} {GAMES[self.game_id]['name']} | {len(events_db[date_key][-1]['partecipanti'])}/{self.players} | Live:{self.leve}", color=0xE10600), view=None)
+        await interaction.response.edit_message(embed=discord.Embed(title="Evento Creato!", description=f"🟩 Giorno {self.day} ore {self.hour} ROSSO nel calendario!\n{GAMES[self.game_id]['emoji']} {GAMES[self.game_id]['name']} | {len(events_db[date_key][-1]['partecipanti'])}/{self.players} | Live:{self.leve}", color=0x00FF7F), view=None)
 
 class GameSelectPanel(discord.ui.Select):
     def __init__(self, parent_view):
@@ -286,13 +287,13 @@ class CalendarioViewDynamic(discord.ui.View):
                 self.add_item(btn)
                 count += 1
 
-    @discord.ui.button(label="Crea Evento", style=discord.ButtonStyle.success, custom_id="crea_evento_v33")
+    @discord.ui.button(label="Crea Evento", style=discord.ButtonStyle.success, custom_id="crea_evento_v34")
     async def crea_evento(self, interaction: discord.Interaction, button: discord.ui.Button):
         view = CreaEventoView()
         embed = get_main_embed(view)
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
-    @discord.ui.button(label="Aggiorna", style=discord.ButtonStyle.secondary, custom_id="aggiorna_cal_v33")
+    @discord.ui.button(label="Aggiorna", style=discord.ButtonStyle.secondary, custom_id="aggiorna_cal_v34")
     async def aggiorna(self, interaction: discord.Interaction, button: discord.ui.Button):
         cal_text, event_list = build_calendar_text()
         embed = create_calendar_embed(cal_text, event_list)
@@ -304,7 +305,7 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 
 @bot.event
 async def on_ready():
-    print(f"✅ Blackout404 v33 online come {bot.user}")
+    print(f"✅ Blackout404 v34 online come {bot.user}")
     bot.add_view(CalendarioViewDynamic())
     try:
         synced = await bot.tree.sync()
@@ -312,7 +313,7 @@ async def on_ready():
     except Exception as e:
         print(f"Errore sync: {e}")
 
-@bot.tree.command(name="calendario", description="Calendario Blackout404 v33")
+@bot.tree.command(name="calendario", description="Calendario Blackout404 v34")
 async def calendario_slash(interaction: discord.Interaction):
     await interaction.response.defer()
     cal_text, event_list = build_calendar_text()
@@ -321,7 +322,7 @@ async def calendario_slash(interaction: discord.Interaction):
 
 @bot.tree.command(name="ping", description="Check ONLINE")
 async def ping_slash(interaction: discord.Interaction):
-    await interaction.response.send_message("Blackout404 v33 FASCIA ROSSA PULITO ONLINE!")
+    await interaction.response.send_message("Blackout404 v34 FASCIA VERDE ACCESA PULITO ONLINE!")
 
 keep_alive()
 bot.run(os.getenv("DISCORD_TOKEN"))
