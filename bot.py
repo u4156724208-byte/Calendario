@@ -10,7 +10,7 @@ from threading import Thread
 app = Flask(__name__)
 @app.route('/')
 def home():
-    return "Blackout404 v34 FASCIA VERDE ACCESA PULITO - ONLINE!"
+    return "Blackout404 v35 SOLO CREA EVENTO EMOJI - ONLINE!"
 
 def run_web():
     port = int(os.environ.get("PORT", 10000))
@@ -287,17 +287,13 @@ class CalendarioViewDynamic(discord.ui.View):
                 self.add_item(btn)
                 count += 1
 
-    @discord.ui.button(label="Crea Evento", style=discord.ButtonStyle.success, custom_id="crea_evento_v34")
+    @discord.ui.button(label="Crea Evento", style=discord.ButtonStyle.success, emoji="📅", custom_id="crea_evento_v35")
     async def crea_evento(self, interaction: discord.Interaction, button: discord.ui.Button):
         view = CreaEventoView()
         embed = get_main_embed(view)
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
-    @discord.ui.button(label="Aggiorna", style=discord.ButtonStyle.secondary, custom_id="aggiorna_cal_v34")
-    async def aggiorna(self, interaction: discord.Interaction, button: discord.ui.Button):
-        cal_text, event_list = build_calendar_text()
-        embed = create_calendar_embed(cal_text, event_list)
-        await interaction.response.edit_message(embed=embed, view=CalendarioViewDynamic())
+
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -305,7 +301,7 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 
 @bot.event
 async def on_ready():
-    print(f"✅ Blackout404 v34 online come {bot.user}")
+    print(f"✅ Blackout404 v35 online come {bot.user}")
     bot.add_view(CalendarioViewDynamic())
     try:
         synced = await bot.tree.sync()
@@ -313,7 +309,7 @@ async def on_ready():
     except Exception as e:
         print(f"Errore sync: {e}")
 
-@bot.tree.command(name="calendario", description="Calendario Blackout404 v34")
+@bot.tree.command(name="calendario", description="Calendario Blackout404 v35")
 async def calendario_slash(interaction: discord.Interaction):
     await interaction.response.defer()
     cal_text, event_list = build_calendar_text()
@@ -322,7 +318,7 @@ async def calendario_slash(interaction: discord.Interaction):
 
 @bot.tree.command(name="ping", description="Check ONLINE")
 async def ping_slash(interaction: discord.Interaction):
-    await interaction.response.send_message("Blackout404 v34 FASCIA VERDE ACCESA PULITO ONLINE!")
+    await interaction.response.send_message("Blackout404 v35 SOLO CREA EVENTO EMOJI ONLINE!")
 
 keep_alive()
 bot.run(os.getenv("DISCORD_TOKEN"))
