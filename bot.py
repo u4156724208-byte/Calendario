@@ -10,7 +10,7 @@ from threading import Thread
 app = Flask(__name__)
 @app.route('/')
 def home():
-  return "CALENDARIO Blackout404 v45 CALENDARIO GIOCHI - ONLINE!"
+  return "CALENDARIO Blackout404 v47 CALENDARIO BIANCO PULITO v47 ONLINE!"
 
 def run_web():
   port = int(os.environ.get("PORT", 10000))
@@ -60,7 +60,7 @@ def build_calendar_text(year=2026, month=10):
       else:
         key = f"{year}-{month:02d}-{day:02d}"
         if key in events_db and len(events_db[key])>0:
-          row_cells.append(f"\u001b[0;32m{day:^3}\u001b[0m ")
+          row_cells.append(f"{day:^4}")
         else:
           row_cells.append(f"{day:^4}")
     row = "".join(row_cells)
@@ -76,11 +76,11 @@ def build_calendar_text(year=2026, month=10):
         hour = ev.get('hour','?')
         partecipanti = ev.get('partecipanti', [])
         count = len(partecipanti) if partecipanti else 1
-        event_list += f"🟩 **{d}** {game_emoji} {ev.get('game_name','?')} | {hour} | {count}/{players_max}\n"
+        event_list += f"Giorno {d} ore {hour} | {ev.get('game_name','?')} | {count}/{players_max} | Live:{ev.get('leve','?')}\n"
   return cal_text, event_list
 
 def create_calendar_embed(cal_text, event_list):
-  desc = f"**Ottobre 2026**\n```ansi\n{cal_text}\n```\n"
+  desc = f"Ottobre 2026\n```\n{cal_text}\n```\n"
   desc += event_list if event_list else ""
   if len(desc) > 3500:
     desc = desc[:3500] + "\n..."
@@ -230,7 +230,7 @@ class ConfermaButton(discord.ui.Button):
     events_db[key].append({"game":v.game_id,"game_name":GAMES[v.game_id]['name'],"players":v.players,"leve":v.leve,"hour":v.hour,"author":str(interaction.user.display_name),"partecipanti":[str(interaction.user.display_name)]})
     events_db[key]=sorted(events_db[key], key=lambda x: x["hour"])
     save_events(events_db)
-    embed_ok=discord.Embed(title="✅ Evento Creato!", description=f"🟩 Giorno {v.day} ore {v.hour}\n{GAMES[v.game_id]['emoji']} {GAMES[v.game_id]['name']} | 1/{v.players} | Live:{v.leve}", color=0x2B2D31)
+    embed_ok=discord.Embed(title="✅ Evento Creato!", description=f" Giorno {v.day} ore {v.hour}\n{GAMES[v.game_id]['emoji']} {GAMES[v.game_id]['name']} | 1/{v.players} | Live:{v.leve}", color=0x2B2D31)
     await interaction.response.edit_message(embed=embed_ok, view=None)
 
 class JoinEventButton(discord.ui.Button):
@@ -241,7 +241,7 @@ class JoinEventButton(discord.ui.Button):
     count = len(partecipanti) if partecipanti else 1
     max_p = event.get('players','?')
     game_emoji = GAMES.get(event.get('game'), {}).get('emoji','🎮')
-    label = f"{day} {hour} {game_emoji} {count}/{max_p}"
+    label = f"{day} {hour} {count}/{max_p}"
     super().__init__(label=label, style=discord.ButtonStyle.success)
     self.date_key = date_key
     self.event_idx = event_idx
@@ -292,7 +292,7 @@ class CalendarioViewDynamic(discord.ui.View):
           break
         self.add_item(btn)
         count+=1
-  @discord.ui.button(label="Crea Evento", style=discord.ButtonStyle.success, custom_id="crea_evento_v45")
+  @discord.ui.button(label="Crea Evento", style=discord.ButtonStyle.success, custom_id="crea_evento_v47")
   async def crea_evento(self, interaction, button):
     view=CreaEventoView()
     embed=get_main_embed(view)
@@ -329,7 +329,7 @@ async def calendario_slash(interaction):
 
 @bot.tree.command(name="ping", description="Check ONLINE")
 async def ping_slash(interaction):
-  await interaction.response.send_message("Blackout404 v45 CALENDARIO GIOCHI ONLINE!")
+  await interaction.response.send_message("Blackout404 v47 CALENDARIO GIOCHI ONLINE!")
 
 keep_alive()
 bot.run(os.getenv("DISCORD_TOKEN"))
