@@ -27,6 +27,16 @@ async def on_ready():
     except Exception as e:
         print(e)
 
+    # Forza nickname a solo "Calendario" in tutti i server
+    for guild in bot.guilds:
+        try:
+            me = guild.me
+            if me.display_name != "Calendario":
+                await me.edit(nick="Calendario")
+                print(f"Nick cambiato in Calendario su {guild.name}")
+        except Exception as e:
+            print(f"Non posso cambiare nick su {guild.name}: {e}")
+
 def get_ora_italia():
     return datetime.datetime.now(ITALIA)
 
