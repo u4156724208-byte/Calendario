@@ -1,3 +1,4 @@
+
 import os, threading, datetime
 from zoneinfo import ZoneInfo
 from flask import Flask
@@ -27,15 +28,95 @@ async def on_ready():
         print(e)
 
 def get_ora_italia():
-    # Se mi dici data/ora manualmente per test, la usiamo
-    # Altrimenti usa ora reale di Roma
     return datetime.datetime.now(ITALIA)
+
+# VIEW CON BOTTONE PARTECIPA
+class EventoPartecipaView(discord.ui.View):
+    def __init__(self, max_partecipanti: int, titolo_evento: str, data_str: str, creatore: str):
+        super().__init__(timeout=None)
+        self.max_p = max_partecipanti
+        self.titolo_evento = titolo_evento
+        self.data_str = data_str
+        self.creatore = creatore
+        self.partecipanti = []  # lista di dict {id, name}
+
+    @discord.ui.button(label="Partecipa", style=discord.ButtonStyle.green, emoji="✅", custom_id="partecipa_btn")
+    async def partecipa(self, interaction: discord.Interaction, button: discord.ui.Button):
+        user_id = interaction.user.id
+
+        # gia partecipa?
+        if any(p["id"] == user_id for p in self.partecipanti):
+            await interaction.response.send_message("Hai gia cliccato Partecipa!", ephemeral=True)
+            return
+
+        # pieno?
+        if len(self.partecipanti) >= self.max_p:
+            await interaction.response.send_message(f"Evento pieno! Massimo {self.max_p} persone.", ephemeral=True)
+            return
+
+        self.partecipanti.append({"id": user_id, "name": interaction.user.display_name})
+
+        # aggiorna embed
+        embed = discord.Embed(
+            title=f"Evento del {self.data_str}",
+            color=0x00ff88
+        )
+        embed.add_field(name="Titolo", value=self.titolo_evento, inline=False)
+
+        if self.partecipanti:
+            lista_nomi = "\n".join([f"• {p['name']}" for p in self.partecipanti])
+            valore = f"{len(self.partecipanti)}/{self.max_p} persone\n{lista_nomi}"
+        else:
+            valore = f"0/{self.max_p} persone"
+
+        embed.add_field(name="Partecipanti", value=valore, inline=False)
+        embed.set_footer(text=f"Creato da {self.creatore}")
+
+        # se pieno disabilita bottone
+        if len(self.partecipanti) >= self.max_p:
+            button.disabled = True
+            button.label = "Evento Pieno"
+            button.style = discord.ButtonStyle.gray
+
+        await interaction.response.edit_message(embed=embed, view=self)
+
+    @discord.ui.button(label="Esci", style=discord.ButtonStyle.red, emoji="❌", custom_id="esci_btn")
+    async def esci(self, interaction: discord.Interaction, button: discord.ui.Button):
+        user_id = interaction.user.id
+        trovato = next((p for p in self.partecipanti if p["id"] == user_id), None)
+        if not trovato:
+            await interaction.response.send_message("Non stai partecipando.", ephemeral=True)
+            return
+
+        self.partecipanti = [p for p in self.partecipanti if p["id"] != user_id]
+
+        embed = discord.Embed(
+            title=f"Evento del {self.data_str}",
+            color=0x00ff88
+        )
+        embed.add_field(name="Titolo", value=self.titolo_evento, inline=False)
+        if self.partecipanti:
+            lista_nomi = "\n".join([f"• {p['name']}" for p in self.partecipanti])
+            valore = f"{len(self.partecipanti)}/{self.max_p} persone\n{lista_nomi}"
+        else:
+            valore = f"0/{self.max_p} persone"
+        embed.add_field(name="Partecipanti", value=valore, inline=False)
+        embed.set_footer(text=f"Creato da {self.creatore}")
+
+        # riabilita bottone partecipa se era pieno
+        for child in self.children:
+            if isinstance(child, discord.ui.Button) and child.custom_id == "partecipa_btn":
+                child.disabled = False
+                child.label = "Partecipa"
+                child.style = discord.ButtonStyle.green
+
+        await interaction.response.edit_message(embed=embed, view=self)
 
 class CreaEventoModal(discord.ui.Modal, title="Crea Evento"):
     def __init__(self):
         super().__init__()
         adesso = get_ora_italia()
-        oggi_giorno = 5  # 05/10/26 come mi hai detto
+        oggi_giorno = 5
         ora_attuale = adesso.strftime("%H:%M")
 
         self.giorno = discord.ui.TextInput(
@@ -70,9 +151,8 @@ class CreaEventoModal(discord.ui.Modal, title="Crea Evento"):
         self.add_item(self.partecipanti)
 
     async def on_submit(self, interaction: discord.Interaction):
-        adesso = get_ora_italia()
-        oggi_giorno = 5  # Forzato a 05/10/26 come da tua indicazione
-        ora_riferimento = 2 * 60 + 2  # 02:02 in minuti
+        oggi_giorno = 5
+        ora_riferimento = 2 * 60 + 2
 
         try:
             g = int(self.giorno.value)
@@ -97,7 +177,6 @@ class CreaEventoModal(discord.ui.Modal, title="Crea Evento"):
             await interaction.response.send_message("Ora non valida. Usa HH:MM es: 21:00", ephemeral=True)
             return
 
-        # Blocco orario passato SOLO se giorno = 05 (oggi)
         if g == oggi_giorno:
             inserita_minuti = h * 60 + m
             if inserita_minuti <= ora_riferimento:
@@ -107,7 +186,6 @@ class CreaEventoModal(discord.ui.Modal, title="Crea Evento"):
                 )
                 return
 
-        # VALIDAZIONE PARTECIPANTI LIBERO - solo minimo 1, no massimo
         try:
             p = int(self.partecipanti.value.strip())
         except:
@@ -118,19 +196,23 @@ class CreaEventoModal(discord.ui.Modal, title="Crea Evento"):
             await interaction.response.send_message(f"Numero partecipanti non valido: {p}. Minimo 1.", ephemeral=True)
             return
 
+        data_str = f"{g:02d}/10/2026 ore {h:02d}:{m:02d}"
+
         embed = discord.Embed(
-            title=f"Evento del {g:02d}/10/2026 ore {h:02d}:{m:02d}",
+            title=f"Evento del {data_str}",
             color=0x00ff88
         )
         embed.add_field(name="Titolo", value=self.titolo.value, inline=False)
-        embed.add_field(name="Partecipanti", value=f"{p} persone", inline=False)
+        embed.add_field(name="Partecipanti", value=f"0/{p} persone", inline=False)
         embed.set_footer(text=f"Creato da {interaction.user.display_name}")
 
-        await interaction.response.send_message(embed=embed)
+        view = EventoPartecipaView(max_partecipanti=p, titolo_evento=self.titolo.value, data_str=data_str, creatore=interaction.user.display_name)
+
+        await interaction.response.send_message(embed=embed, view=view)
 
 class CreaEventoButton(discord.ui.Button):
     def __init__(self):
-        super().__init__(label="Crea Evento", style=discord.ButtonStyle.green, emoji="\U0001f4c5")
+        super().__init__(label="Crea Evento", style=discord.ButtonStyle.green, emoji="📅")
 
     async def callback(self, interaction: discord.Interaction):
         await interaction.response.send_modal(CreaEventoModal())
