@@ -1,4 +1,3 @@
-
 import os, threading, datetime, calendar
 from zoneinfo import ZoneInfo
 from flask import Flask
@@ -96,50 +95,86 @@ class EventoPartecipaView(discord.ui.View):
                 child.style = discord.ButtonStyle.green
         await interaction.response.edit_message(embed=embed, view=self)
 
-class CreaEventoModal(discord.ui.Modal, title="Crea Evento"):
+# VIEW SCELTA PARTECIPANTI (second step per non superare limite 5 campi)
+class SceltaPartecipantiView(discord.ui.View):
+    def __init__(self, giorno, mese, anno, ora_h, ora_m, titolo, creatore):
+        super().__init__(timeout=120)
+        self.giorno = giorno
+        self.mese = mese
+        self.anno = anno
+        self.ora_h = ora_h
+        self.ora_m = ora_m
+        self.titolo = titolo
+        self.creatore = creatore
+
+    @discord.ui.button(label="2", style=discord.ButtonStyle.gray)
+    async def p2(self, interaction, button): await self.crea_evento(interaction, 2)
+    @discord.ui.button(label="3", style=discord.ButtonStyle.gray)
+    async def p3(self, interaction, button): await self.crea_evento(interaction, 3)
+    @discord.ui.button(label="4", style=discord.ButtonStyle.gray)
+    async def p4(self, interaction, button): await self.crea_evento(interaction, 4)
+    @discord.ui.button(label="5", style=discord.ButtonStyle.gray)
+    async def p5(self, interaction, button): await self.crea_evento(interaction, 5)
+    @discord.ui.button(label="10", style=discord.ButtonStyle.green)
+    async def p10(self, interaction, button): await self.crea_evento(interaction, 10)
+
+    async def crea_evento(self, interaction: discord.Interaction, max_p):
+        data_str = f"{self.giorno:02d}/{self.mese:02d}/{self.anno} ore {self.ora_h:02d}:{self.ora_m:02d}"
+        embed = discord.Embed(title=f"Evento del {data_str}", color=0x00ff88)
+        embed.add_field(name="Titolo", value=self.titolo, inline=False)
+        embed.add_field(name="Partecipanti", value=f"0/{max_p} persone", inline=False)
+        embed.set_footer(text=f"Creato da {self.creatore}")
+        view = EventoPartecipaView(max_partecipanti=max_p, titolo_evento=self.titolo, data_str=data_str, creatore=self.creatore)
+        await interaction.response.edit_message(content=f"✅ Evento creato per {data_str}", embed=None, view=None)
+        await interaction.channel.send(embed=embed, view=view)
+
+class CreaEventoModal(discord.ui.Modal, title="Crea Evento - scegli data completa"):
     def __init__(self):
         super().__init__()
         adesso = get_ora_italia()
-        self.giorno = discord.ui.TextInput(label=f"Giorno (1-31) Oggi {adesso.day:02d}/10", placeholder=f"Es: {adesso.day}", default=str(adesso.day), max_length=2, required=True)
-        self.ora = discord.ui.TextInput(label=f"Ora (adesso {adesso.strftime('%H:%M')})", placeholder="Es: 03:00", max_length=5, required=True)
-        self.titolo = discord.ui.TextInput(label="Titolo", placeholder="Es: Game Film", max_length=100, required=True)
-        self.partecipanti = discord.ui.TextInput(label="Partecipanti (numero)", placeholder="Es: 4", max_length=10, required=True)
+        # Esempi con data corrente come richiesto
+        self.giorno = discord.ui.TextInput(label=f"Giorno (1-31) - Oggi {adesso.day:02d}", placeholder=f"Es: {adesso.day}", default=str(adesso.day), max_length=2, required=True)
+        self.mese = discord.ui.TextInput(label=f"Mese (1-12) - Oggi {adesso.month:02d}", placeholder=f"Es: {adesso.month}", default=str(adesso.month), max_length=2, required=True)
+        self.anno = discord.ui.TextInput(label=f"Anno - Oggi {adesso.year}", placeholder=f"Es: {adesso.year}", default=str(adesso.year), max_length=4, required=True)
+        self.ora = discord.ui.TextInput(label=f"Ora (HH:MM) - Ora {adesso.strftime('%H:%M')}", placeholder="Es: 21:00", default=adesso.strftime('%H:%M'), max_length=5, required=True)
+        self.titolo = discord.ui.TextInput(label="Titolo evento", placeholder="Es: Game Film JustChatting", max_length=100, required=True)
         self.add_item(self.giorno)
+        self.add_item(self.mese)
+        self.add_item(self.anno)
         self.add_item(self.ora)
         self.add_item(self.titolo)
-        self.add_item(self.partecipanti)
 
     async def on_submit(self, interaction: discord.Interaction):
-        oggi = get_ora_italia().day
+        adesso = get_ora_italia()
         try:
-            g = int(self.giorno.value)
-            if not (1 <= g <= 31): raise ValueError()
-        except:
-            await interaction.response.send_message("Giorno non valido.", ephemeral=True)
+            g = int(self.giorno.value); m = int(self.mese.value); a = int(self.anno.value)
+            if not (1 <= g <= 31 and 1 <= m <= 12 and 2024 <= a <= 2030): raise ValueError()
+            # valida giorni del mese
+            max_g = calendar.monthrange(a, m)[1]
+            if g > max_g: raise ValueError(f"Il mese {m} ha solo {max_g} giorni")
+        except Exception as e:
+            await interaction.response.send_message(f"Data non valida: {e}. Usa GG MM AAAA validi.", ephemeral=True)
             return
         ora_str = self.ora.value.strip()
         try:
             if ":" in ora_str:
-                h,m = map(int, ora_str.split(":"))
+                h,mm = map(int, ora_str.split(":"))
             else:
-                h = int(ora_str); m = 0
-            if not (0 <= h <= 23 and 0 <= m <= 59): raise ValueError()
+                h = int(ora_str); mm = 0
+            if not (0 <= h <= 23 and 0 <= mm <= 59): raise ValueError()
         except:
-            await interaction.response.send_message("Ora non valida.", ephemeral=True)
+            await interaction.response.send_message("Ora non valida. Usa HH:MM es: 21:00", ephemeral=True)
             return
-        try:
-            p = int(self.partecipanti.value.strip())
-            if p < 1: raise ValueError()
-        except:
-            await interaction.response.send_message("Partecipanti non valido.", ephemeral=True)
+
+        # Controllo data passata se anno/mese/giorno = oggi
+        data_evento = datetime.datetime(a, m, g, h, mm, tzinfo=ITALIA)
+        if data_evento <= adesso:
+            await interaction.response.send_message(f"Non puoi creare evento nel passato! Hai messo {g:02d}/{m:02d}/{a} {h:02d}:{mm:02d} ma ora e' {adesso.strftime('%d/%m/%Y %H:%M')}", ephemeral=True)
             return
-        data_str = f"{g:02d}/10/2026 ore {h:02d}:{m:02d}"
-        embed = discord.Embed(title=f"Evento del {data_str}", color=0x00ff88)
-        embed.add_field(name="Titolo", value=self.titolo.value, inline=False)
-        embed.add_field(name="Partecipanti", value=f"0/{p} persone", inline=False)
-        embed.set_footer(text=f"Creato da {interaction.user.display_name}")
-        view = EventoPartecipaView(max_partecipanti=p, titolo_evento=self.titolo.value, data_str=data_str, creatore=interaction.user.display_name)
-        await interaction.response.send_message(embed=embed, view=view)
+
+        # Secondo step: scelta partecipanti (per non superare limite 5 campi modal)
+        view = SceltaPartecipantiView(giorno=g, mese=m, anno=a, ora_h=h, ora_m=mm, titolo=self.titolo.value, creatore=interaction.user.display_name)
+        await interaction.response.send_message(f"📅 Data: {g:02d}/{m:02d}/{a} ore {h:02d}:{mm:02d}\nTitolo: {self.titolo.value}\n\nScegli max partecipanti:", view=view, ephemeral=True)
 
 class CreaEventoButton(discord.ui.Button):
     def __init__(self):
@@ -174,7 +209,6 @@ class SoloBottoneView(discord.ui.View):
         btn_next.callback = next_cb
         self.add_item(btn_prev)
         self.add_item(btn_next)
-
     def get_embed(self):
         return discord.Embed(title=f"{MESI_ITA[self.mese-1]} {self.anno}", description=genera_calendario_mese(self.anno, self.mese), color=0x2b2d31)
 
@@ -193,7 +227,7 @@ async def on_ready():
         except:
             pass
 
-@bot.tree.command(name="calendario", description="Mostra calendario + bottone crea evento")
+@bot.tree.command(name="calendario", description="Mostra calendario + crea evento")
 async def calendario(interaction: discord.Interaction):
     adesso = get_ora_italia()
     view = SoloBottoneView(anno=adesso.year, mese=adesso.month)
