@@ -1,5 +1,5 @@
 
-import os, threading, datetime
+import os, threading, datetime, calendar
 from zoneinfo import ZoneInfo
 from flask import Flask
 import discord
@@ -18,30 +18,29 @@ intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 ITALIA = ZoneInfo("Europe/Rome")
-
-@bot.event
-async def on_ready():
-    print(f"Online come {bot.user}")
-    try:
-        await bot.tree.sync()
-        print("Sync OK")
-    except Exception as e:
-        print(e)
-
-    # Forza nickname a solo "Calendario" in tutti i server
-    for guild in bot.guilds:
-        try:
-            me = guild.me
-            if me.display_name != "Calendario":
-                await me.edit(nick="Calendario")
-                print(f"Nick cambiato in Calendario su {guild.name}")
-        except Exception as e:
-            print(f"Non posso cambiare nick su {guild.name}: {e}")
+MESI_ITA = ["Gennaio","Febbraio","Marzo","Aprile","Maggio","Giugno","Luglio","Agosto","Settembre","Ottobre","Novembre","Dicembre"]
 
 def get_ora_italia():
     return datetime.datetime.now(ITALIA)
 
-# VIEW CON BOTTONE PARTECIPA
+def genera_calendario_mese(anno, mese):
+    cal = calendar.Calendar(firstweekday=0)
+    giorni = list(cal.itermonthdays(anno, mese))
+    header = "LUN  MAR  MER  GIO  VEN  SAB  DOM"
+    righe = []
+    for i in range(0, len(giorni), 7):
+        sett = giorni[i:i+7]
+        riga = ""
+        for g in sett:
+            if g == 0:
+                riga += "     "
+            else:
+                riga += f"{g:02d}   "
+        righe.append(riga.rstrip())
+    testo = "```\n" + header + "\n" + "\n".join(righe) + "\n```"
+    return testo
+
+# VIEW PARTECIPA
 class EventoPartecipaView(discord.ui.View):
     def __init__(self, max_partecipanti: int, titolo_evento: str, data_str: str, creatore: str):
         super().__init__(timeout=None)
@@ -49,46 +48,28 @@ class EventoPartecipaView(discord.ui.View):
         self.titolo_evento = titolo_evento
         self.data_str = data_str
         self.creatore = creatore
-        self.partecipanti = []  # lista di dict {id, name}
+        self.partecipanti = []
 
     @discord.ui.button(label="Partecipa", style=discord.ButtonStyle.green, emoji="✅", custom_id="partecipa_btn")
     async def partecipa(self, interaction: discord.Interaction, button: discord.ui.Button):
         user_id = interaction.user.id
-
-        # gia partecipa?
         if any(p["id"] == user_id for p in self.partecipanti):
             await interaction.response.send_message("Hai gia cliccato Partecipa!", ephemeral=True)
             return
-
-        # pieno?
         if len(self.partecipanti) >= self.max_p:
             await interaction.response.send_message(f"Evento pieno! Massimo {self.max_p} persone.", ephemeral=True)
             return
-
         self.partecipanti.append({"id": user_id, "name": interaction.user.display_name})
-
-        # aggiorna embed
-        embed = discord.Embed(
-            title=f"Evento del {self.data_str}",
-            color=0x00ff88
-        )
+        embed = discord.Embed(title=f"Evento del {self.data_str}", color=0x00ff88)
         embed.add_field(name="Titolo", value=self.titolo_evento, inline=False)
-
-        if self.partecipanti:
-            lista_nomi = "\n".join([f"• {p['name']}" for p in self.partecipanti])
-            valore = f"{len(self.partecipanti)}/{self.max_p} persone\n{lista_nomi}"
-        else:
-            valore = f"0/{self.max_p} persone"
-
+        lista_nomi = "\n".join([f"• {p['name']}" for p in self.partecipanti])
+        valore = f"{len(self.partecipanti)}/{self.max_p} persone\n{lista_nomi}" if self.partecipanti else f"0/{self.max_p} persone"
         embed.add_field(name="Partecipanti", value=valore, inline=False)
         embed.set_footer(text=f"Creato da {self.creatore}")
-
-        # se pieno disabilita bottone
         if len(self.partecipanti) >= self.max_p:
             button.disabled = True
             button.label = "Evento Pieno"
             button.style = discord.ButtonStyle.gray
-
         await interaction.response.edit_message(embed=embed, view=self)
 
     @discord.ui.button(label="Esci", style=discord.ButtonStyle.red, emoji="❌", custom_id="esci_btn")
@@ -98,13 +79,8 @@ class EventoPartecipaView(discord.ui.View):
         if not trovato:
             await interaction.response.send_message("Non stai partecipando.", ephemeral=True)
             return
-
         self.partecipanti = [p for p in self.partecipanti if p["id"] != user_id]
-
-        embed = discord.Embed(
-            title=f"Evento del {self.data_str}",
-            color=0x00ff88
-        )
+        embed = discord.Embed(title=f"Evento del {self.data_str}", color=0x00ff88)
         embed.add_field(name="Titolo", value=self.titolo_evento, inline=False)
         if self.partecipanti:
             lista_nomi = "\n".join([f"• {p['name']}" for p in self.partecipanti])
@@ -113,136 +89,121 @@ class EventoPartecipaView(discord.ui.View):
             valore = f"0/{self.max_p} persone"
         embed.add_field(name="Partecipanti", value=valore, inline=False)
         embed.set_footer(text=f"Creato da {self.creatore}")
-
-        # riabilita bottone partecipa se era pieno
         for child in self.children:
             if isinstance(child, discord.ui.Button) and child.custom_id == "partecipa_btn":
                 child.disabled = False
                 child.label = "Partecipa"
                 child.style = discord.ButtonStyle.green
-
         await interaction.response.edit_message(embed=embed, view=self)
 
 class CreaEventoModal(discord.ui.Modal, title="Crea Evento"):
     def __init__(self):
         super().__init__()
         adesso = get_ora_italia()
-        oggi_giorno = 5
-        ora_attuale = adesso.strftime("%H:%M")
-
-        self.giorno = discord.ui.TextInput(
-            label=f"Giorno (da {oggi_giorno} a 31) - Oggi 05/10/26",
-            placeholder=f"Es: {oggi_giorno}",
-            default=str(oggi_giorno),
-            max_length=2,
-            required=True
-        )
-        self.ora = discord.ui.TextInput(
-            label=f"Ora (adesso {ora_attuale} del 05/10/26)",
-            placeholder="Es: 03:00",
-            max_length=5,
-            required=True
-        )
-        self.titolo = discord.ui.TextInput(
-            label="Titolo",
-            placeholder="Es: Game Film JustChatting",
-            max_length=100,
-            required=True
-        )
-        self.partecipanti = discord.ui.TextInput(
-            label="Partecipanti (numero libero)",
-            placeholder="Es: 1 2 3",
-            max_length=10,
-            required=True
-        )
-
+        self.giorno = discord.ui.TextInput(label=f"Giorno (1-31) Oggi {adesso.day:02d}/10", placeholder=f"Es: {adesso.day}", default=str(adesso.day), max_length=2, required=True)
+        self.ora = discord.ui.TextInput(label=f"Ora (adesso {adesso.strftime('%H:%M')})", placeholder="Es: 03:00", max_length=5, required=True)
+        self.titolo = discord.ui.TextInput(label="Titolo", placeholder="Es: Game Film", max_length=100, required=True)
+        self.partecipanti = discord.ui.TextInput(label="Partecipanti (numero)", placeholder="Es: 4", max_length=10, required=True)
         self.add_item(self.giorno)
         self.add_item(self.ora)
         self.add_item(self.titolo)
         self.add_item(self.partecipanti)
 
     async def on_submit(self, interaction: discord.Interaction):
-        oggi_giorno = 5
-        ora_riferimento = 2 * 60 + 2
-
+        oggi = get_ora_italia().day
         try:
             g = int(self.giorno.value)
+            if not (1 <= g <= 31): raise ValueError()
         except:
-            await interaction.response.send_message("Giorno non valido. Usa 1-31.", ephemeral=True)
+            await interaction.response.send_message("Giorno non valido.", ephemeral=True)
             return
-
-        if g < oggi_giorno or g > 31:
-            await interaction.response.send_message(f"Oggi e' 05/10/26 02:02 - puoi usare solo giorni da 05 a 31.", ephemeral=True)
-            return
-
         ora_str = self.ora.value.strip()
         try:
             if ":" in ora_str:
-                h, m = map(int, ora_str.split(":"))
+                h,m = map(int, ora_str.split(":"))
             else:
-                h = int(ora_str)
-                m = 0
-            if not (0 <= h <= 23 and 0 <= m <= 59):
-                raise ValueError()
+                h = int(ora_str); m = 0
+            if not (0 <= h <= 23 and 0 <= m <= 59): raise ValueError()
         except:
-            await interaction.response.send_message("Ora non valida. Usa HH:MM es: 21:00", ephemeral=True)
+            await interaction.response.send_message("Ora non valida.", ephemeral=True)
             return
-
-        if g == oggi_giorno:
-            inserita_minuti = h * 60 + m
-            if inserita_minuti <= ora_riferimento:
-                await interaction.response.send_message(
-                    f"Non puoi creare un evento per oggi 05/10 alle {h:02d}:{m:02d}, e' gia passato! Ora sono le 02:02. Inserisci un orario dopo le 02:02.",
-                    ephemeral=True
-                )
-                return
-
         try:
             p = int(self.partecipanti.value.strip())
+            if p < 1: raise ValueError()
         except:
-            await interaction.response.send_message("Partecipanti non valido. Inserisci un numero.", ephemeral=True)
+            await interaction.response.send_message("Partecipanti non valido.", ephemeral=True)
             return
-        
-        if p < 1:
-            await interaction.response.send_message(f"Numero partecipanti non valido: {p}. Minimo 1.", ephemeral=True)
-            return
-
         data_str = f"{g:02d}/10/2026 ore {h:02d}:{m:02d}"
-
-        embed = discord.Embed(
-            title=f"Evento del {data_str}",
-            color=0x00ff88
-        )
+        embed = discord.Embed(title=f"Evento del {data_str}", color=0x00ff88)
         embed.add_field(name="Titolo", value=self.titolo.value, inline=False)
         embed.add_field(name="Partecipanti", value=f"0/{p} persone", inline=False)
         embed.set_footer(text=f"Creato da {interaction.user.display_name}")
-
         view = EventoPartecipaView(max_partecipanti=p, titolo_evento=self.titolo.value, data_str=data_str, creatore=interaction.user.display_name)
-
         await interaction.response.send_message(embed=embed, view=view)
 
 class CreaEventoButton(discord.ui.Button):
     def __init__(self):
         super().__init__(label="Crea Evento", style=discord.ButtonStyle.green, emoji="📅")
-
     async def callback(self, interaction: discord.Interaction):
         await interaction.response.send_modal(CreaEventoModal())
 
 class SoloBottoneView(discord.ui.View):
-    def __init__(self):
+    def __init__(self, anno=None, mese=None):
         super().__init__(timeout=None)
+        adesso = get_ora_italia()
+        self.anno = anno or adesso.year
+        self.mese = mese or adesso.month
         self.add_item(CreaEventoButton())
+        btn_prev = discord.ui.Button(label="◀️", style=discord.ButtonStyle.gray, row=0)
+        btn_next = discord.ui.Button(label="▶️", style=discord.ButtonStyle.gray, row=0)
+        async def prev_cb(interaction: discord.Interaction):
+            self.mese -= 1
+            if self.mese < 1:
+                self.mese = 12
+                self.anno -= 1
+            embed = discord.Embed(title=f"{MESI_ITA[self.mese-1]} {self.anno}", description=genera_calendario_mese(self.anno, self.mese), color=0x2b2d31)
+            await interaction.response.edit_message(embed=embed, view=self)
+        async def next_cb(interaction: discord.Interaction):
+            self.mese += 1
+            if self.mese > 12:
+                self.mese = 1
+                self.anno += 1
+            embed = discord.Embed(title=f"{MESI_ITA[self.mese-1]} {self.anno}", description=genera_calendario_mese(self.anno, self.mese), color=0x2b2d31)
+            await interaction.response.edit_message(embed=embed, view=self)
+        btn_prev.callback = prev_cb
+        btn_next.callback = next_cb
+        self.add_item(btn_prev)
+        self.add_item(btn_next)
 
-@bot.tree.command(name="calendario", description="Mostra bottone crea evento")
+    def get_embed(self):
+        return discord.Embed(title=f"{MESI_ITA[self.mese-1]} {self.anno}", description=genera_calendario_mese(self.anno, self.mese), color=0x2b2d31)
+
+@bot.event
+async def on_ready():
+    print(f"Online come {bot.user}")
+    try:
+        await bot.tree.sync()
+        print("Sync OK")
+    except Exception as e:
+        print(e)
+    for guild in bot.guilds:
+        try:
+            if guild.me.display_name != "Calendario":
+                await guild.me.edit(nick="Calendario")
+        except:
+            pass
+
+@bot.tree.command(name="calendario", description="Mostra calendario + bottone crea evento")
 async def calendario(interaction: discord.Interaction):
-    view = SoloBottoneView()
-    # Risposta effimera + messaggio normale: cosi' il "Clicca per vedere il comando" resta solo sopra il messaggio effimero, non sopra l'embed
+    adesso = get_ora_italia()
+    view = SoloBottoneView(anno=adesso.year, mese=adesso.month)
     await interaction.response.send_message("✅ Calendario inviato qui sotto!", ephemeral=True)
-    await interaction.channel.send(view=view)
+    await interaction.channel.send(embed=view.get_embed(), view=view)
 
 @bot.command(name="calendario")
 async def calendario_prefix(ctx):
-    view = SoloBottoneView()
-    await ctx.send(view=view)
+    adesso = get_ora_italia()
+    view = SoloBottoneView(anno=adesso.year, mese=adesso.month)
+    await ctx.send(embed=view.get_embed(), view=view)
 
 bot.run(os.getenv("DISCORD_TOKEN"))
