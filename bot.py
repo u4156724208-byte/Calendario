@@ -60,7 +60,7 @@ class CreaEventoModal(discord.ui.Modal, title="Crea Evento"):
         )
         self.partecipanti = discord.ui.TextInput(
             label="Partecipanti (numero libero)",
-            placeholder="Es: 5 oppure 50",
+            placeholder="Es: 1 2 3",
             max_length=10,
             required=True
         )
