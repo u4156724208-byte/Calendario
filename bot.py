@@ -1,4 +1,3 @@
-
 import os, threading, datetime
 from zoneinfo import ZoneInfo
 from flask import Flask
@@ -120,14 +119,14 @@ class CreaEventoModal(discord.ui.Modal, title="Crea Evento"):
             return
 
         embed = discord.Embed(
-            title=f"Evento del {g:02d}/10/2026 - {self.titolo.value}",
+            title=f"Evento del {g:02d}/10/2026",
             color=0x00ff88
         )
         embed.add_field(name="Giorno", value=f"{g:02d}/10/2026", inline=True)
         embed.add_field(name="Ora", value=f"{h:02d}:{m:02d}", inline=True)
         embed.add_field(name="Titolo", value=self.titolo.value, inline=False)
         embed.add_field(name="Partecipanti", value=f"{p} persone", inline=False)
-        embed.set_footer(text=f"Creato da {interaction.user.display_name} • Oggi 05/10/26 02:02")
+        embed.set_footer(text=f"Creato da {interaction.user.display_name}")
 
         await interaction.response.send_message(embed=embed)
 
