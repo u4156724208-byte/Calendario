@@ -14,6 +14,7 @@ def run_web():
 threading.Thread(target=run_web, daemon=True).start()
 
 intents = discord.Intents.default()
+intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 ITALIA = ZoneInfo("Europe/Rome")
@@ -235,6 +236,13 @@ class SoloBottoneView(discord.ui.View):
 @bot.tree.command(name="calendario", description="Mostra bottone crea evento")
 async def calendario(interaction: discord.Interaction):
     view = SoloBottoneView()
-    await interaction.response.send_message(view=view)
+    # Risposta effimera + messaggio normale: cosi' il "Clicca per vedere il comando" resta solo sopra il messaggio effimero, non sopra l'embed
+    await interaction.response.send_message("✅ Calendario inviato qui sotto!", ephemeral=True)
+    await interaction.channel.send(view=view)
+
+@bot.command(name="calendario")
+async def calendario_prefix(ctx):
+    view = SoloBottoneView()
+    await ctx.send(view=view)
 
 bot.run(os.getenv("DISCORD_TOKEN"))
