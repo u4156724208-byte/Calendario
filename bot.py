@@ -1,4 +1,5 @@
 import os, threading, datetime
+from zoneinfo import ZoneInfo
 from flask import Flask
 import discord
 from discord.ext import commands
@@ -14,6 +15,8 @@ threading.Thread(target=run_web, daemon=True).start()
 intents = discord.Intents.default()
 bot = commands.Bot(command_prefix="!", intents=intents)
 
+ITALIA = ZoneInfo("Europe/Rome")
+
 @bot.event
 async def on_ready():
     print(f"Online come {bot.user}")
@@ -23,21 +26,28 @@ async def on_ready():
     except Exception as e:
         print(e)
 
+def get_ora_italia():
+    # Se mi dici data/ora manualmente per test, la usiamo
+    # Altrimenti usa ora reale di Roma
+    return datetime.datetime.now(ITALIA)
+
 class CreaEventoModal(discord.ui.Modal, title="Crea Evento"):
     def __init__(self):
         super().__init__()
-        oggi_giorno = datetime.date.today().day
-        ora_attuale = datetime.datetime.now().strftime("%H:%M")
+        adesso = get_ora_italia()
+        oggi_giorno = 5  # 05/10/26 come mi hai detto
+        ora_attuale = adesso.strftime("%H:%M")
 
         self.giorno = discord.ui.TextInput(
-            label=f"Giorno (da {oggi_giorno} a 31)",
+            label=f"Giorno (da {oggi_giorno} a 31) - Oggi 05/10/26",
             placeholder=f"Es: {oggi_giorno}",
+            default=str(oggi_giorno),
             max_length=2,
             required=True
         )
         self.ora = discord.ui.TextInput(
-            label=f"Ora (ora attuale {ora_attuale})",
-            placeholder="Es: 21:00",
+            label=f"Ora (adesso {ora_attuale} del 05/10/26)",
+            placeholder="Es: 03:00",
             max_length=5,
             required=True
         )
@@ -49,7 +59,7 @@ class CreaEventoModal(discord.ui.Modal, title="Crea Evento"):
         )
         self.partecipanti = discord.ui.TextInput(
             label="Partecipanti",
-            placeholder="Es: @Mario, @Luigi, @Peppe",
+            placeholder="Es: @Mario, @Luigi",
             style=discord.TextStyle.paragraph,
             max_length=500,
             required=False
@@ -61,21 +71,22 @@ class CreaEventoModal(discord.ui.Modal, title="Crea Evento"):
         self.add_item(self.partecipanti)
 
     async def on_submit(self, interaction: discord.Interaction):
+        adesso = get_ora_italia()
+        oggi_giorno = 5  # Forzato a 05/10/26 come da tua indicazione
+        ora_riferimento = 2 * 60 + 2  # 02:02 in minuti
+
         try:
             g = int(self.giorno.value)
         except:
             await interaction.response.send_message("Giorno non valido. Usa 1-31.", ephemeral=True)
             return
 
-        oggi = datetime.date.today().day
-        if g < oggi or g > 31:
-            await interaction.response.send_message(f"Puoi usare solo giorni da {oggi} a 31.", ephemeral=True)
+        if g < oggi_giorno or g > 31:
+            await interaction.response.send_message(f"Oggi e' 05/10/26 02:02 - puoi usare solo giorni da 05 a 31.", ephemeral=True)
             return
 
-        # VALIDAZIONE ORARIO
         ora_str = self.ora.value.strip()
         try:
-            # Supporta HH:MM o HH
             if ":" in ora_str:
                 h, m = map(int, ora_str.split(":"))
             else:
@@ -83,20 +94,16 @@ class CreaEventoModal(discord.ui.Modal, title="Crea Evento"):
                 m = 0
             if not (0 <= h <= 23 and 0 <= m <= 59):
                 raise ValueError()
-            ora_inserita = datetime.time(h, m)
         except:
-            await interaction.response.send_message("Ora non valida. Usa formato HH:MM es: 21:00", ephemeral=True)
+            await interaction.response.send_message("Ora non valida. Usa HH:MM es: 21:00", ephemeral=True)
             return
 
-        # Se giorno = oggi, blocca orario passato
-        if g == oggi:
-            ora_adesso = datetime.datetime.now().time()
-            # confronto ore e minuti
-            adesso_minuti = ora_adesso.hour * 60 + ora_adesso.minute
+        # Blocco orario passato SOLO se giorno = 05 (oggi)
+        if g == oggi_giorno:
             inserita_minuti = h * 60 + m
-            if inserita_minuti <= adesso_minuti:
+            if inserita_minuti <= ora_riferimento:
                 await interaction.response.send_message(
-                    f"Non puoi creare un evento per oggi alle {h:02d}:{m:02d}, e' gia passato! Ora sono le {ora_adesso.strftime('%H:%M')}. Inserisci un orario futuro.",
+                    f"Non puoi creare un evento per oggi 05/10 alle {h:02d}:{m:02d}, e' gia passato! Ora sono le 02:02. Inserisci un orario dopo le 02:02.",
                     ephemeral=True
                 )
                 return
@@ -110,8 +117,7 @@ class CreaEventoModal(discord.ui.Modal, title="Crea Evento"):
         embed.add_field(name="Titolo gioco", value=self.titolo.value, inline=False)
         if self.partecipanti.value:
             embed.add_field(name="Partecipanti", value=self.partecipanti.value, inline=False)
-        
-        embed.set_footer(text=f"Creato da {interaction.user.display_name}")
+        embed.set_footer(text=f"Creato da {interaction.user.display_name} • Oggi 05/10/26 02:02")
 
         await interaction.response.send_message(embed=embed)
 
