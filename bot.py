@@ -1,3 +1,4 @@
+
 import os, threading, datetime
 from zoneinfo import ZoneInfo
 from flask import Flask
@@ -58,11 +59,10 @@ class CreaEventoModal(discord.ui.Modal, title="Crea Evento"):
             required=True
         )
         self.partecipanti = discord.ui.TextInput(
-            label="Partecipanti",
-            placeholder="Es: @Mario, @Luigi",
-            style=discord.TextStyle.paragraph,
-            max_length=500,
-            required=False
+            label="Partecipanti (numero libero)",
+            placeholder="Es: 5 oppure 50",
+            max_length=10,
+            required=True
         )
 
         self.add_item(self.giorno)
@@ -108,6 +108,17 @@ class CreaEventoModal(discord.ui.Modal, title="Crea Evento"):
                 )
                 return
 
+        # VALIDAZIONE PARTECIPANTI LIBERO - solo minimo 1, no massimo
+        try:
+            p = int(self.partecipanti.value.strip())
+        except:
+            await interaction.response.send_message("Partecipanti non valido. Inserisci un numero.", ephemeral=True)
+            return
+        
+        if p < 1:
+            await interaction.response.send_message(f"Numero partecipanti non valido: {p}. Minimo 1.", ephemeral=True)
+            return
+
         embed = discord.Embed(
             title=f"Evento del {g:02d}/10/2026 - {self.titolo.value}",
             color=0x00ff88
@@ -115,8 +126,7 @@ class CreaEventoModal(discord.ui.Modal, title="Crea Evento"):
         embed.add_field(name="Giorno", value=f"{g:02d}/10/2026", inline=True)
         embed.add_field(name="Ora", value=f"{h:02d}:{m:02d}", inline=True)
         embed.add_field(name="Titolo gioco", value=self.titolo.value, inline=False)
-        if self.partecipanti.value:
-            embed.add_field(name="Partecipanti", value=self.partecipanti.value, inline=False)
+        embed.add_field(name="Partecipanti", value=f"{p} persone", inline=False)
         embed.set_footer(text=f"Creato da {interaction.user.display_name} • Oggi 05/10/26 02:02")
 
         await interaction.response.send_message(embed=embed)
