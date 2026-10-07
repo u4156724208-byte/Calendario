@@ -56,4 +56,4 @@ async def on_ready():
     print(f"Bot online come {bot.user} - Config: Esempio 1 2 3 / default 0")
 
 # Render usa DISCORD_TOKEN come env var
-bot.run(os.getenv("DISCORD_TOKEN"))
+bot.run(os.getenv("DISCORD_TOKEN")) 
