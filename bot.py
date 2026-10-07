@@ -69,14 +69,16 @@ class CreaEventoModal(discord.ui.Modal, title="Crea Evento - con tag @"):
     data_in = discord.ui.TextInput(label="Data (GG/MM/AAAA)", placeholder="07/10/2026", default="07/10/2026")
     ora_in = discord.ui.TextInput(label="Ora (HH:MM)", placeholder="18:00", default="18:00")
     titolo_in = discord.ui.TextInput(label="Titolo evento - usa @ per taggare", placeholder="Es: Game Cinema JustChatting", style=discord.TextStyle.paragraph)
-    max_in = discord.ui.TextInput(label="Max partecipanti (1-99)", placeholder="Esempio 1 2 3 - lascia 0 per illimitato", default="", max_length=2)
+    max_in = discord.ui.TextInput(label="Max partecipanti (1-99)", placeholder="Esempio 1 2 3", default="1", max_length=2)
     async def on_submit(self, interaction: discord.Interaction):
         try:
             now = datetime.now()
             data_val = self.data_in.value or now.strftime("%d/%m/%Y")
             ora_val = self.ora_in.value or now.strftime("%H:%M")
-            max_v = int(self.max_in.value) if self.max_in.value.isdigit() else 0
-            max_display = 99 if max_v == 0 else max_v
+            max_v = int(self.max_in.value) if self.max_in.value.isdigit() else 1
+            if max_v < 1: max_v = 1
+            if max_v > 99: max_v = 99
+            max_display = max_v
             eid = str(uuid.uuid4())[:8]
             titolo_raw = self.titolo_in.value
             events[eid] = {'data': data_val, 'ora': ora_val, 'titolo': titolo_raw, 'max': max_display, 'partecipanti': [], 'creatore': interaction.user.display_name, 'created_at': now, 'channel_id': None, 'message_id': None}
