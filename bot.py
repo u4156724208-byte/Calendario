@@ -89,10 +89,16 @@ def find_tags_for_title(forum, titolo, is_calendario=False):
                     matched.append(tag)
                     break
     
-    # Se nessun match gioco, non mettere Crea Evento, ma metti primo game tag disponibile per farlo comparire nella stanza giusta
-    # Se proprio nulla, usa primo game tag
-    if not matched and game_tags:
-        # prova a capire dal titolo: se contiene ARC -> Arc Raiders
+    if matched:
+        return matched[:5]
+
+    # Se nessun match gioco -> metti in Altro (come da richiesta)
+    if not matched:
+        # 1) cerca tag Altro
+        for t in forum.available_tags:
+            if "altro" in t.name.lower():
+                return [t]
+        # 2) se non c'e' Altro, cerca i tag specifici ancora (arc, call ecc) per sicurezza
         if "arc" in titolo_low:
             for t in game_tags:
                 if "arc" in t.name.lower():
@@ -101,8 +107,25 @@ def find_tags_for_title(forum, titolo, is_calendario=False):
             for t in game_tags:
                 if "call" in t.name.lower():
                     return [t]
-        # fallback: primo game tag (non Crea Evento)
-        return [game_tags[0]]
+        if "dead" in titolo_low or "daylight" in titolo_low or "dbd" in titolo_low:
+            for t in game_tags:
+                if "dead" in t.name.lower():
+                    return [t]
+        if "euro" in titolo_low or "truck" in titolo_low or "ets" in titolo_low:
+            for t in game_tags:
+                if "euro" in t.name.lower():
+                    return [t]
+        if "farming" in titolo_low or "simulator" in titolo_low:
+            for t in game_tags:
+                if "farming" in t.name.lower():
+                    return [t]
+        if "wardogs" in titolo_low or "ward" in titolo_low:
+            for t in game_tags:
+                if "wardogs" in t.name.lower() or "ward" in t.name.lower():
+                    return [t]
+        # 3) ultimo fallback: se c'e' Altro gia cercato, altrimenti primo game tag
+        if game_tags:
+            return [game_tags[-1] if any("altro" in t.name.lower() for t in forum.available_tags) else game_tags[0]]
     return matched[:5]
 
 
