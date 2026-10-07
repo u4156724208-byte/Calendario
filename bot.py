@@ -68,8 +68,8 @@ class PartecipaView(discord.ui.View):
 class CreaEventoModal(discord.ui.Modal, title="Crea Evento - con tag @"):
     data_in = discord.ui.TextInput(label="Data (GG/MM/AAAA)", placeholder="07/10/2026", default="07/10/2026")
     ora_in = discord.ui.TextInput(label="Ora (HH:MM)", placeholder="18:00", default="18:00")
-    titolo_in = discord.ui.TextInput(label="Titolo evento - usa @ per taggare", placeholder="Es: @Warzone @everyone Game", style=discord.TextStyle.paragraph)
-    max_in = discord.ui.TextInput(label="Max partecipanti (1-99) - Esempio 1 2 3", placeholder="Esempio: 1, 2, 3... lascia 0", default="0", max_length=2)
+    titolo_in = discord.ui.TextInput(label="Titolo evento - usa @ per taggare", placeholder="Es: Game Cinema JustChatting", style=discord.TextStyle.paragraph)
+    max_in = discord.ui.TextInput(label="Max partecipanti (1-99)", placeholder="Esempio 1 2 3 - lascia 0 per illimitato", default="", max_length=2)
     async def on_submit(self, interaction: discord.Interaction):
         try:
             now = datetime.now()
