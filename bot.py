@@ -37,52 +37,74 @@ def get_forum_channel(interaction):
         return ch.parent
     return None
 
-def find_tags_for_title(forum, titolo):
-    """Match fuzzy per gestire typo tipo Arc Rauders vs ARC Raiders"""
+def find_tags_for_title(forum, titolo, is_calendario=False):
+    """Se is_calendario=True -> solo tag Crea Evento/Calendario, se False -> solo tag giochi"""
     if not forum or not hasattr(forum, 'available_tags') or not forum.available_tags:
         return []
     titolo_low = titolo.lower()
+    
+    # Se e' il calendario, cerca solo tag Crea Evento / Calendario
+    if is_calendario:
+        for t in forum.available_tags:
+            if "crea evento" in t.name.lower() or "calendario" in t.name.lower():
+                return [t]
+        # fallback primo tag
+        return [forum.available_tags[0]] if forum.available_tags else []
+
+    # Per eventi gioco: ESCLUDI tag Crea Evento/Calendario
+    game_tags = [t for t in forum.available_tags if "crea evento" not in t.name.lower() and "calendario" not in t.name.lower()]
+    if not game_tags:
+        game_tags = forum.available_tags
+
     matched = []
-    # keywords map per gestire typo
     KEYWORDS = {
-        "arc rauders": ["arc", "raiders", "rauder", "arc raiders"],
-        "call of duty": ["cod", "call of duty", "warzone", "mw"],
-        "wardfogs": ["wardfogs", "ward", "fogs"],
+        "arc raiders": ["arc", "raiders", "rauder", "arc raiders"],
+        "call of dutty": ["cod", "call of duty", "warzone", "mw", "dutty"],
+        "wardogs": ["wardogs", "ward", "wardogs", "war"],
+        "arc rauders": ["arc", "raiders", "rauder"],
     }
-    for tag in forum.available_tags:
+    for tag in game_tags:
         name_low = tag.name.lower()
-        # 1) diretto
-        if name_low in titolo_low or titolo_low in name_low:
+        # diretto
+        if name_low in titolo_low:
             matched.append(tag)
             continue
-        # 2) parola in comune
+        # parola in comune >=3 lettere
+        import re
         tag_words = set(re.split(r'\W+', name_low))
         titolo_words = set(re.split(r'\W+', titolo_low))
-        if tag_words & titolo_words:
-            # se almeno una parola di 3+ lettere coincide
-            if any(len(w)>=3 for w in (tag_words & titolo_words)):
-                matched.append(tag)
-                continue
-        # 3) fuzzy > 0.6 per typo
-        ratio = SequenceMatcher(None, name_low, titolo_low).ratio()
-        if ratio > 0.6:
+        common = tag_words & titolo_words
+        if common and any(len(w)>=3 for w in common):
             matched.append(tag)
             continue
-        # 4) keywords map
+        # fuzzy
+        from difflib import SequenceMatcher
+        if SequenceMatcher(None, name_low, titolo_low).ratio() > 0.6:
+            matched.append(tag)
+            continue
+        # keywords
         for key, alts in KEYWORDS.items():
-            if key in name_low:
+            if key in name_low or name_low in key:
                 if any(a in titolo_low for a in alts):
                     matched.append(tag)
                     break
-    # se nessun match, ma il forum richiede tag, usa primo tag disponibile (Crea Evento o primo)
-    if not matched and forum.available_tags:
-        # prova tag "Crea Evento" come fallback
-        for t in forum.available_tags:
-            if "crea evento" in t.name.lower():
-                return [t]
-        # altrimenti primo tag
-        return [forum.available_tags[0]]
+    
+    # Se nessun match gioco, non mettere Crea Evento, ma metti primo game tag disponibile per farlo comparire nella stanza giusta
+    # Se proprio nulla, usa primo game tag
+    if not matched and game_tags:
+        # prova a capire dal titolo: se contiene ARC -> Arc Raiders
+        if "arc" in titolo_low:
+            for t in game_tags:
+                if "arc" in t.name.lower():
+                    return [t]
+        if "call" in titolo_low or "cod" in titolo_low or "warzone" in titolo_low:
+            for t in game_tags:
+                if "call" in t.name.lower():
+                    return [t]
+        # fallback: primo game tag (non Crea Evento)
+        return [game_tags[0]]
     return matched[:5]
+
 
 class PartecipaView(discord.ui.View):
     def __init__(self, event_id="temp"):
@@ -160,7 +182,7 @@ class CreaEventoModal(discord.ui.Modal):
             forum = self.forum_channel or get_forum_channel(interaction)
 
             if forum and isinstance(forum, discord.ForumChannel):
-                tags = find_tags_for_title(forum, titolo_raw)
+                tags = find_tags_for_title(forum, titolo_raw, is_calendario=False)
                 thread_name = f"{titolo_raw} - {data_val} {ora_val}"[:100]
                 print(f"[FORUM] Creo thread '{thread_name}' con tags {[t.name for t in tags]} nel forum {forum.name}")
                 try:
@@ -270,14 +292,26 @@ async def pulizia_24h():
 async def calendario_slash(interaction: discord.Interaction):
     forum = get_forum_channel(interaction)
     embed = discord.Embed(title="Ottobre 2026", description=f"```\n{calendario_text()}\n```", color=0x2b2d31)
+    embed.set_footer(text="Clicca Crea Evento qui sotto per creare un evento nel tag giusto")
     if forum and isinstance(forum, discord.ForumChannel):
         try:
-            # tag obbligatorio per calendario: usa Crea Evento
-            tag_cal = find_tags_for_title(forum, "Crea Evento")
-            await forum.create_thread(name="Calendario - Ottobre 2026", embed=embed, view=CalendarioView(), applied_tags=tag_cal, auto_archive_duration=10080)
-            await interaction.response.send_message("✅ Calendario creato come post nel forum! Ora lo vedi a sinistra", ephemeral=True)
+            # Controlla se esiste gia un post Calendario - se si, non ricrearlo
+            for thread in forum.threads:
+                if "calendario" in thread.name.lower():
+                    await interaction.response.send_message(f"Calendario gia esiste: {thread.mention} - e' pinnato in alto", ephemeral=True)
+                    return
+            tag_cal = find_tags_for_title(forum, "Crea Evento", is_calendario=True)
+            created = await forum.create_thread(name="Calendario - Ottobre 2026", embed=embed, view=CalendarioView(), applied_tags=tag_cal, auto_archive_duration=10080)
+            thread = created.thread if hasattr(created, 'thread') else created
+            if isinstance(created, tuple):
+                thread = created[0]
+            try:
+                await thread.pin()
+            except:
+                pass
+            await interaction.response.send_message(f"✅ Calendario creato e pinnato: {thread.mention}\n\nOra quando filtri per **Arc Raiders** vedi SOLO gli eventi Arc, quando filtri per **Crea Evento** vedi SOLO il Calendario (come nel tuo screen 2)", ephemeral=True)
         except Exception as e:
-            print(f"Errore calendario forum: {e}")
+            print(f"Errore calendario forum: {e}\n{traceback.format_exc()}")
             await interaction.response.send_message(embed=embed, view=CalendarioView(), ephemeral=True)
     else:
         await interaction.response.send_message(embed=embed, view=CalendarioView())
@@ -303,17 +337,79 @@ async def pulisci_eventi_slash(interaction: discord.Interaction):
             count += 1
     await interaction.response.send_message(f"Puliti {count} eventi", ephemeral=True)
 
+@bot.tree.command(name="reset_forum", description="[Admin] Cancella TUTTI i post nel forum test-calenfario")
+async def reset_forum_slash(interaction: discord.Interaction):
+    if not interaction.user.guild_permissions.manage_messages:
+        await interaction.response.send_message("Serve Gestisci Messaggi", ephemeral=True)
+        return
+    forum = get_forum_channel(interaction)
+    if not forum:
+        await interaction.response.send_message("Usa questo comando DENTRO il canale forum test-calenfario", ephemeral=True)
+        return
+    await interaction.response.defer(ephemeral=True)
+    count = 0
+    for thread in list(forum.threads):
+        try:
+            await thread.delete()
+            count += 1
+        except Exception as e:
+            print(f"Errore delete {thread.name}: {e}")
+    # cancella anche archiviati
+    try:
+        async for thread in forum.archived_threads(limit=100):
+            try:
+                await thread.delete()
+                count += 1
+            except:
+                pass
+    except:
+        pass
+    events.clear()
+    await interaction.followup.send(f"✅ Forum pulito! Cancellati {count} post. Ora fai /calendario per ricreare il Calendario pinnato.", ephemeral=True)
+
 @bot.command(name="calendario")
 async def calendario_prefix(ctx):
     embed = discord.Embed(title="Ottobre 2026", description=f"```\n{calendario_text()}\n```", color=0x2b2d31)
     await ctx.send(embed=embed, view=CalendarioView())
+
+
+@bot.event
+async def on_message(message):
+    # Pulisci messaggi di sistema "ha cambiato il titolo del post" per tenere canale pulito
+    try:
+        if message.author == bot.user:
+            await bot.process_commands(message)
+            return
+        content = message.content.lower() if message.content else ""
+        # Discord in italiano: "ha cambiato il titolo del post"
+        # In inglese: "changed the channel name" / "changed the post title"
+        if "ha cambiato il titolo del post" in content or "ha cambiato il nome del canale" in content or "changed the post title" in content.lower() or "changed the channel name" in content.lower():
+            # cancella se bot ha permessi
+            if message.channel.permissions_for(message.guild.me).manage_messages:
+                await message.delete()
+                print(f"[PULIZIA TITOLO] Cancellato messaggio titolo: {message.id}")
+                return
+        # cancella anche messaggi tipo "Crea Evento" se qualcuno scrive solo quello (spam da vecchio bug)
+        if message.channel and isinstance(message.channel, discord.Thread):
+            if message.content.strip().lower() == "crea evento" and not message.embeds:
+                # se e' solo testo "Crea Evento" senza embed, e' il bug vecchio
+                if message.channel.permissions_for(message.guild.me).manage_messages:
+                    await message.delete()
+                    return
+    except Exception as e:
+        print(f"on_message pulizia fallita: {e}")
+    try:
+        await bot.process_commands(message)
+    except:
+        pass
+
 
 @bot.event
 async def on_ready():
     bot.add_view(CalendarioView())
     bot.add_view(PartecipaView())
     await bot.tree.sync()
-    print(f"SYNC OK - {bot.user} - Forum FIX tag")
+    print(f"SYNC OK - {bot.user} - Forum pulizia titolo automatica")
     if not pulizia_24h.is_running():
         pulizia_24h.start()
 
