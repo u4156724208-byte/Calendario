@@ -295,10 +295,16 @@ async def calendario_slash(interaction: discord.Interaction):
     embed.set_footer(text="Clicca Crea Evento qui sotto per creare un evento nel tag giusto")
     if forum and isinstance(forum, discord.ForumChannel):
         try:
-            # Controlla se esiste gia un post Calendario - se si, non ricrearlo
+            # Controlla se esiste gia un post Crea Evento
             for thread in forum.threads:
                 if "crea evento" in thread.name.lower() or "calendario" in thread.name.lower():
-                    await interaction.response.send_message(f"Post Crea Evento gia esiste: {thread.mention} - e' pinnato in alto", ephemeral=True)
+                    # Se esiste ma il messaggio originale e' stato eliminato, ripristinalo
+                    try:
+                        await thread.send(embed=embed, view=CalendarioView())
+                        await interaction.response.send_message(f"✅ Ho ripristinato il calendario in {thread.mention} - ora lo vedi di nuovo!", ephemeral=True)
+                    except Exception as e:
+                        print(f"Ripristino fallito: {e}")
+                        await interaction.response.send_message(f"Post Crea Evento gia esiste: {thread.mention} - ma non riesco a ripristinare (manca permesso Invia Messaggi nel thread)", ephemeral=True)
                     return
             tag_cal = find_tags_for_title(forum, "Crea Evento", is_calendario=True)
             created = await forum.create_thread(name="Crea Evento", embed=embed, view=CalendarioView(), applied_tags=tag_cal, auto_archive_duration=10080)
@@ -309,12 +315,32 @@ async def calendario_slash(interaction: discord.Interaction):
                 await thread.pin()
             except:
                 pass
-            await interaction.response.send_message(f"✅ Post Crea Evento creato e pinnato: {thread.mention}\n\nOra quando filtri per **Arc Raiders** vedi SOLO gli eventi Arc, quando filtri per **Crea Evento** vedi SOLO il Calendario (come nel tuo screen 2)", ephemeral=True)
+            await interaction.response.send_message(f"✅ Post Crea Evento creato e pinnato: {thread.mention}", ephemeral=True)
         except Exception as e:
             print(f"Errore calendario forum: {e}\n{traceback.format_exc()}")
             await interaction.response.send_message(embed=embed, view=CalendarioView(), ephemeral=True)
     else:
         await interaction.response.send_message(embed=embed, view=CalendarioView())
+
+@bot.tree.command(name="fix_calendario", description="[Admin] Ripristina embed calendario se cancellato")
+async def fix_calendario_slash(interaction: discord.Interaction):
+    forum = get_forum_channel(interaction)
+    if not forum:
+        await interaction.response.send_message("Usa questo comando DENTRO il canale forum calendario", ephemeral=True)
+        return
+    embed = discord.Embed(title="Ottobre 2026", description=f"```\n{calendario_text()}\n```", color=0x2b2d31)
+    embed.set_footer(text="Clicca Crea Evento qui sotto per creare un evento nel tag giusto")
+    await interaction.response.defer(ephemeral=True)
+    for thread in forum.threads:
+        if "crea evento" in thread.name.lower() or "calendario" in thread.name.lower():
+            try:
+                await thread.send(embed=embed, view=CalendarioView())
+                await interaction.followup.send(f"✅ Ripristinato calendario in {thread.mention}", ephemeral=True)
+                return
+            except Exception as e:
+                await interaction.followup.send(f"Errore: {e}", ephemeral=True)
+                return
+    await interaction.followup.send("Nessun post Crea Evento trovato, uso /calendario", ephemeral=True)
 
 @bot.tree.command(name="pulisci_eventi", description="[Admin] Pulisci eventi vecchi di 24h")
 async def pulisci_eventi_slash(interaction: discord.Interaction):
@@ -389,13 +415,7 @@ async def on_message(message):
                 await message.delete()
                 print(f"[PULIZIA TITOLO] Cancellato messaggio titolo: {message.id}")
                 return
-        # cancella anche messaggi tipo "Crea Evento" se qualcuno scrive solo quello (spam da vecchio bug)
-        if message.channel and isinstance(message.channel, discord.Thread):
-            if message.content.strip().lower() == "crea evento" and not message.embeds:
-                # se e' solo testo "Crea Evento" senza embed, e' il bug vecchio
-                if message.channel.permissions_for(message.guild.me).manage_messages:
-                    await message.delete()
-                    return
+        # rimosso pulitore aggressivo - non cancella piu messaggi normali
     except Exception as e:
         print(f"on_message pulizia fallita: {e}")
     try:
