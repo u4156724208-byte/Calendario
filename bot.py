@@ -297,11 +297,11 @@ async def calendario_slash(interaction: discord.Interaction):
         try:
             # Controlla se esiste gia un post Calendario - se si, non ricrearlo
             for thread in forum.threads:
-                if "calendario" in thread.name.lower():
-                    await interaction.response.send_message(f"Calendario gia esiste: {thread.mention} - e' pinnato in alto", ephemeral=True)
+                if "crea evento" in thread.name.lower() or "calendario" in thread.name.lower():
+                    await interaction.response.send_message(f"Post Crea Evento gia esiste: {thread.mention} - e' pinnato in alto", ephemeral=True)
                     return
             tag_cal = find_tags_for_title(forum, "Crea Evento", is_calendario=True)
-            created = await forum.create_thread(name="Calendario - Ottobre 2026", embed=embed, view=CalendarioView(), applied_tags=tag_cal, auto_archive_duration=10080)
+            created = await forum.create_thread(name="Crea Evento", embed=embed, view=CalendarioView(), applied_tags=tag_cal, auto_archive_duration=10080)
             thread = created.thread if hasattr(created, 'thread') else created
             if isinstance(created, tuple):
                 thread = created[0]
@@ -309,7 +309,7 @@ async def calendario_slash(interaction: discord.Interaction):
                 await thread.pin()
             except:
                 pass
-            await interaction.response.send_message(f"✅ Calendario creato e pinnato: {thread.mention}\n\nOra quando filtri per **Arc Raiders** vedi SOLO gli eventi Arc, quando filtri per **Crea Evento** vedi SOLO il Calendario (come nel tuo screen 2)", ephemeral=True)
+            await interaction.response.send_message(f"✅ Post Crea Evento creato e pinnato: {thread.mention}\n\nOra quando filtri per **Arc Raiders** vedi SOLO gli eventi Arc, quando filtri per **Crea Evento** vedi SOLO il Calendario (come nel tuo screen 2)", ephemeral=True)
         except Exception as e:
             print(f"Errore calendario forum: {e}\n{traceback.format_exc()}")
             await interaction.response.send_message(embed=embed, view=CalendarioView(), ephemeral=True)
