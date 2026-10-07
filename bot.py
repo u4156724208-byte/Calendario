@@ -1,59 +1,52 @@
-import discord
-from discord.ext import commands
+import 【entity-discord¦canonical_name=discord】
+from 【entity-discord¦canonical_name=discord】.ext import commands
 import os
+from flask import Flask
+import threading
 
-intents = discord.Intents.default()
+# FIX 1: Mini web server per Render Web Service
+app = Flask(__name__)
+@app.route('/')
+def home(): return "OK - Calendario Bot Esempio 1 2 3"
+
+def run_flask():
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
+
+threading.Thread(target=run_flask, daemon=True).start()
+
+# FIX 2: Bot con sync corretto
+intents = 【entity-discord¦canonical_name=discord】.Intents.default()
 intents.message_content = True
-
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# MODAL con la modifica che hai chiesto
-class CreaEventoModal(discord.ui.Modal, title="Crea Evento Calendario"):
-    # Qui la modifica: prima era "Max partecipanti (1-99) - Default 10 *"
-    # Ora è "Max partecipanti (1-99) - Esempio 1 2 3 *"
+class CreaEventoModal(【entity-discord¦canonical_name=discord】.ui.Modal, title="Crea Evento"):
     max_partecipanti = discord.ui.TextInput(
         label="Max partecipanti (1-99) - Esempio 1 2 3",
-        placeholder="Esempio: 1, 2, 3...",
-        default="0",  # prima era 10, ora 0 come da tua richiesta
-        min_length=1,
-        max_length=2,
-        required=True
+        placeholder="0",
+        default="0",
+        required=True,
+        max_length=2
     )
-
-    nome_evento = discord.ui.TextInput(
-        label="Nome evento",
-        placeholder="Es: Torneo Ghost",
-        required=True
-    )
-
+    nome_evento = discord.ui.TextInput(label="Nome evento", required=True)
+    
     async def on_submit(self, interaction: discord.Interaction):
-        try:
-            num = int(self.max_partecipanti.value)
-            if not 0 <= num <= 99:
-                raise ValueError
-        except ValueError:
-            await interaction.response.send_message("❌ Inserisci un numero tra 0 e 99 per i partecipanti.", ephemeral=True)
-            return
-
-        embed = discord.Embed(
-            title=f"📅 {self.nome_evento.value}",
-            description=f"Max partecipanti: **{num}**\nCreatore: {interaction.user.mention}",
-            color=discord.Color.blurple()
+        await interaction.response.send_message(
+            f"📅 **{self.nome_evento.value}** - Max: {self.max_partecipanti.value}",
+            ephemeral=True
         )
-        await interaction.response.send_message(embed=embed)
 
-@bot.command()
-async def calendario(ctx):
-    await ctx.send("Clicca per creare:", view=CreaEventoView())
-
-class CreaEventoView(discord.ui.View):
+class CreaView(discord.ui.View):
     @discord.ui.button(label="Crea Evento", style=discord.ButtonStyle.blurple)
     async def crea(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(CreaEventoModal())
 
+@bot.command()
+async def calendario(ctx):
+    await ctx.send("Crea:", view=CreaView())
+
 @bot.event
 async def on_ready():
-    print(f"Bot online come {bot.user} - Config: Esempio 1 2 3 / default 0")
+    await bot.tree.sync()
+    print(f"Online come {bot.user} - Sync OK")
 
-# Render usa DISCORD_TOKEN come env var
 bot.run(os.getenv("DISCORD_TOKEN"))
