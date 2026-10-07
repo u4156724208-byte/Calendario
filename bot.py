@@ -1,4 +1,4 @@
-import os, threading, datetime, calendar
+import os, threading, datetime, calendar, re
 from zoneinfo import ZoneInfo
 from flask import Flask
 import discord
@@ -95,7 +95,6 @@ class EventoPartecipaView(discord.ui.View):
                 child.style = discord.ButtonStyle.green
         await interaction.response.edit_message(embed=embed, view=self)
 
-# VIEW SCELTA PARTECIPANTI (second step per non superare limite 5 campi)
 class SceltaPartecipantiView(discord.ui.View):
     def __init__(self, giorno, mese, anno, ora_h, ora_m, titolo, creatore):
         super().__init__(timeout=120)
@@ -128,33 +127,51 @@ class SceltaPartecipantiView(discord.ui.View):
         await interaction.response.edit_message(content=f"✅ Evento creato per {data_str}", embed=None, view=None)
         await interaction.channel.send(embed=embed, view=view)
 
+# MODAL NUOVO: GIORNO+MESE+ANNO IN UNA SOLA RIGA
 class CreaEventoModal(discord.ui.Modal, title="Crea Evento - scegli data completa"):
     def __init__(self):
         super().__init__()
         adesso = get_ora_italia()
-        # Esempi con data corrente come richiesto
-        self.giorno = discord.ui.TextInput(label=f"Giorno (1-31) - Oggi {adesso.day:02d}", placeholder=f"Es: {adesso.day}", default=str(adesso.day), max_length=2, required=True)
-        self.mese = discord.ui.TextInput(label=f"Mese (1-12) - Oggi {adesso.month:02d}", placeholder=f"Es: {adesso.month}", default=str(adesso.month), max_length=2, required=True)
-        self.anno = discord.ui.TextInput(label=f"Anno - Oggi {adesso.year}", placeholder=f"Es: {adesso.year}", default=str(adesso.year), max_length=4, required=True)
-        self.ora = discord.ui.TextInput(label=f"Ora (HH:MM) - Ora {adesso.strftime('%H:%M')}", placeholder="Es: 21:00", default=adesso.strftime('%H:%M'), max_length=5, required=True)
+        data_oggi = f"{adesso.day:02d}/{adesso.month:02d}/{adesso.year}"
+        # UNICO CAMPO PER GIORNO MESE ANNO
+        self.data = discord.ui.TextInput(
+            label=f"Data (GG/MM/AAAA) - Oggi {data_oggi}",
+            placeholder=f"Es: {data_oggi}",
+            default=data_oggi,
+            max_length=10,
+            required=True
+        )
+        self.ora = discord.ui.TextInput(
+            label=f"Ora (HH:MM) - Ora {adesso.strftime('%H:%M')}",
+            placeholder="Es: 21:00",
+            default=adesso.strftime('%H:%M'),
+            max_length=5,
+            required=True
+        )
         self.titolo = discord.ui.TextInput(label="Titolo evento", placeholder="Es: Game Film JustChatting", max_length=100, required=True)
-        self.add_item(self.giorno)
-        self.add_item(self.mese)
-        self.add_item(self.anno)
+        self.add_item(self.data)
         self.add_item(self.ora)
         self.add_item(self.titolo)
 
     async def on_submit(self, interaction: discord.Interaction):
         adesso = get_ora_italia()
-        try:
-            g = int(self.giorno.value); m = int(self.mese.value); a = int(self.anno.value)
-            if not (1 <= g <= 31 and 1 <= m <= 12 and 2024 <= a <= 2030): raise ValueError()
-            # valida giorni del mese
-            max_g = calendar.monthrange(a, m)[1]
-            if g > max_g: raise ValueError(f"Il mese {m} ha solo {max_g} giorni")
-        except Exception as e:
-            await interaction.response.send_message(f"Data non valida: {e}. Usa GG MM AAAA validi.", ephemeral=True)
+        # Parse GG/MM/AAAA
+        data_str = self.data.value.strip()
+        m = re.match(r"^(\d{1,2})[/\-\.](\d{1,2})[/\-\.](\d{4})$", data_str)
+        if not m:
+            await interaction.response.send_message("Data non valida! Usa formato GG/MM/AAAA es: 07/10/2026", ephemeral=True)
             return
+        try:
+            g = int(m.group(1)); mese = int(m.group(2)); anno = int(m.group(3))
+            if not (1 <= g <= 31 and 1 <= mese <= 12 and 2024 <= anno <= 2030):
+                raise ValueError()
+            max_g = calendar.monthrange(anno, mese)[1]
+            if g > max_g:
+                raise ValueError(f"Il mese {mese} ha solo {max_g} giorni")
+        except Exception as e:
+            await interaction.response.send_message(f"Data non valida: {e}. Usa GG/MM/AAAA validi.", ephemeral=True)
+            return
+
         ora_str = self.ora.value.strip()
         try:
             if ":" in ora_str:
@@ -166,15 +183,13 @@ class CreaEventoModal(discord.ui.Modal, title="Crea Evento - scegli data complet
             await interaction.response.send_message("Ora non valida. Usa HH:MM es: 21:00", ephemeral=True)
             return
 
-        # Controllo data passata se anno/mese/giorno = oggi
-        data_evento = datetime.datetime(a, m, g, h, mm, tzinfo=ITALIA)
+        data_evento = datetime.datetime(anno, mese, g, h, mm, tzinfo=ITALIA)
         if data_evento <= adesso:
-            await interaction.response.send_message(f"Non puoi creare evento nel passato! Hai messo {g:02d}/{m:02d}/{a} {h:02d}:{mm:02d} ma ora e' {adesso.strftime('%d/%m/%Y %H:%M')}", ephemeral=True)
+            await interaction.response.send_message(f"Non puoi creare evento nel passato! Hai messo {g:02d}/{mese:02d}/{anno} {h:02d}:{mm:02d} ma ora e' {adesso.strftime('%d/%m/%Y %H:%M')}", ephemeral=True)
             return
 
-        # Secondo step: scelta partecipanti (per non superare limite 5 campi modal)
-        view = SceltaPartecipantiView(giorno=g, mese=m, anno=a, ora_h=h, ora_m=mm, titolo=self.titolo.value, creatore=interaction.user.display_name)
-        await interaction.response.send_message(f"📅 Data: {g:02d}/{m:02d}/{a} ore {h:02d}:{mm:02d}\nTitolo: {self.titolo.value}\n\nScegli max partecipanti:", view=view, ephemeral=True)
+        view = SceltaPartecipantiView(giorno=g, mese=mese, anno=anno, ora_h=h, ora_m=mm, titolo=self.titolo.value, creatore=interaction.user.display_name)
+        await interaction.response.send_message(f"📅 Data: {g:02d}/{mese:02d}/{anno} ore {h:02d}:{mm:02d}\nTitolo: {self.titolo.value}\n\nScegli max partecipanti:", view=view, ephemeral=True)
 
 class CreaEventoButton(discord.ui.Button):
     def __init__(self):
