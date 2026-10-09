@@ -211,18 +211,44 @@ async def invia_post_fisso_calendario():
         if not canale:
             print(f"Canale {CANALE_FISSO_ID} non trovato")
             return
-        # Controlla se c'è già un post del bot nelle ultime 20 msgs per non spammare
-        async for msg in canale.history(limit=20):
-            if msg.author == bot.user and "Ottobre" in str(msg.embeds[0].title if msg.embeds else ""):
-                print("Post fisso già presente, skip")
-                return
+        # Controlla se c'è già un post del bot nelle ultime 30 msgs per non spammare
+        async for msg in canale.history(limit=30):
+            if msg.author == bot.user:
+                # check if it's our calendar post
+                if msg.embeds and any("Clicca Crea Evento" in str(f.value) for e in msg.embeds for f in e.fields):
+                    print("Post fisso già presente, skip")
+                    return
+                # also check forum threads
+                if hasattr(msg, 'thread') and msg.thread:
+                    print("Post fisso già presente, skip")
+                    return
         adesso = get_ora_italia()
         view = SoloBottoneView(anno=adesso.year, mese=adesso.month)
         embed = view.get_embed()
-        await canale.send(content="**Crea il tuo Evento Qui**", embed=embed, view=view)
-        print(f"Post fisso inviato in {canale.name}")
+
+        # Se è un canale Forum (come nel tuo screenshot), crea un post del forum
+        if isinstance(canale, discord.ForumChannel):
+            # cerca tag "Crea Evento" se esiste
+            tag_crea = None
+            for t in canale.available_tags:
+                if "Crea Evento" in t.name:
+                    tag_crea = t
+                    break
+            tags = [tag_crea] if tag_crea else []
+            await canale.create_thread(
+                name="Crea il tuo Evento Qui",
+                content="**Crea il tuo Evento Qui**\n\nClicca Crea Evento qui sotto per creare un evento nel tag giusto",
+                embed=embed,
+                view=view,
+                applied_tags=tags
+            )
+            print(f"Post forum creato in {canale.name}")
+        else:
+            await canale.send(content="**Crea il tuo Evento Qui**", embed=embed, view=view)
+            print(f"Post fisso inviato in {canale.name}")
     except Exception as e:
         print(f"Errore invio post fisso: {e}")
+        import traceback; traceback.print_exc()
 
 @bot.event
 async def on_ready():
@@ -246,6 +272,36 @@ async def calendario(interaction: discord.Interaction):
     view = SoloBottoneView(anno=adesso.year, mese=adesso.month)
     await interaction.response.send_message("✅ Calendario inviato qui sotto!", ephemeral=True)
     await interaction.channel.send(embed=view.get_embed(), view=view)
+
+@bot.tree.command(name="setup_calendario", description="Pubblica il post fisso con calendario nel canale dedicato")
+async def setup_calendario(interaction: discord.Interaction):
+    try:
+        canale = bot.get_channel(CANALE_FISSO_ID)
+        if not canale:
+            canale = await bot.fetch_channel(CANALE_FISSO_ID)
+        adesso = get_ora_italia()
+        view = SoloBottoneView(anno=adesso.year, mese=adesso.month)
+        embed = view.get_embed()
+        if isinstance(canale, discord.ForumChannel):
+            tag_crea = None
+            for t in canale.available_tags:
+                if "Crea Evento" in t.name:
+                    tag_crea = t
+                    break
+            tags = [tag_crea] if tag_crea else []
+            await canale.create_thread(
+                name="Crea il tuo Evento Qui",
+                content="**Crea il tuo Evento Qui**",
+                embed=embed,
+                view=view,
+                applied_tags=tags
+            )
+        else:
+            await canale.send(content="**Crea il tuo Evento Qui**", embed=embed, view=view)
+        await interaction.response.send_message(f"✅ Post pubblicato in <#{CANALE_FISSO_ID}>", ephemeral=True)
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        await interaction.response.send_message(f"Errore: {e}", ephemeral=True)
 
 @bot.command(name="calendario")
 async def calendario_prefix(ctx):
