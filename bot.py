@@ -136,9 +136,8 @@ class CreaEventoModal(discord.ui.Modal, title="Crea Evento"):
         data_formattata = f"{g:02d}/{mese:02d}/{anno} ore {h:02d}:{mm:02d}"
         embed = discord.Embed(title=f"Evento del {data_formattata}", color=0x00ff88)
         embed.add_field(name="Titolo", value=self.titolo.value, inline=False)
-        embed.add_field(name="👤 Creatore", value=f"{interaction.user.display_name} ({interaction.user.mention})", inline=False)
         embed.add_field(name="Partecipanti", value=f"0/{max_partecipanti} persone", inline=False)
-        embed.set_footer(text=f"Creato da {interaction.user.display_name} • {data_formattata}")
+        embed.set_footer(text=f"Creato da {interaction.user.display_name}")
         view = EventoPartecipaView(max_partecipanti=max_partecipanti, titolo_evento=self.titolo.value, data_str=data_formattata, creatore=interaction.user.display_name)
 
         try:
@@ -212,10 +211,10 @@ class CreaEventoModal(discord.ui.Modal, title="Crea Evento"):
                 tag_scelto = trova_tag()
                 applied = [tag_scelto] if tag_scelto else []
                 
-                # FIX: niente cover per gli eventi, nick per intero sotto la data
+                # IMPORTANTE: niente cover per gli eventi, solo embed + bottoni
                 await forum.create_thread(
                     name=f"{self.titolo.value} - {data_formattata}",
-                    content=f"**{self.titolo.value}**\n📅 {data_formattata}\n👤 Creato da {interaction.user.mention} - {interaction.user.display_name}",
+                    content=f"**{self.titolo.value}**\n📅 {data_formattata} - Creato da {interaction.user.mention}",
                     embed=embed,
                     view=view,
                     applied_tags=applied
