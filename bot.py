@@ -227,17 +227,32 @@ class SoloBottoneView(discord.ui.View):
         self.anno = anno or adesso.year
         self.mese = mese or adesso.month
         self.add_item(CreaEventoButton())
-        # Rimuovi frecce mese - lasciamo solo Crea Evento
-
+        btn_prev = discord.ui.Button(label="◀️", style=discord.ButtonStyle.gray, row=0)
+        btn_next = discord.ui.Button(label="▶️", style=discord.ButtonStyle.gray, row=0)
+        async def prev_cb(interaction: discord.Interaction):
+            self.mese -= 1
+            if self.mese < 1:
+                self.mese = 12
+                self.anno -= 1
+            embed = discord.Embed(title=f"{MESI_ITA[self.mese-1]} {self.anno}", description=genera_calendario_mese(self.anno, self.mese), color=0x2b2d31)
+            embed.add_field(name="", value="Clicca Crea Evento qui sotto per creare un evento nel tag giusto", inline=False)
+            await interaction.response.edit_message(embed=embed, view=self)
+        async def next_cb(interaction: discord.Interaction):
+            self.mese += 1
+            if self.mese > 12:
+                self.mese = 1
+                self.anno += 1
+            embed = discord.Embed(title=f"{MESI_ITA[self.mese-1]} {self.anno}", description=genera_calendario_mese(self.anno, self.mese), color=0x2b2d31)
+            embed.add_field(name="", value="Clicca Crea Evento qui sotto per creare un evento nel tag giusto", inline=False)
+            await interaction.response.edit_message(embed=embed, view=self)
+        btn_prev.callback = prev_cb
+        btn_next.callback = next_cb
+        self.add_item(btn_prev)
+        self.add_item(btn_next)
     def get_embed(self):
-        # Solo embed pulito, senza calendario di testo grigio
-        embed = discord.Embed(
-            title="Crea il tuo Evento Qui - Calendario Eventi",
-            description="Clicca **Crea Evento** qui sotto per creare un evento nel tag giusto",
-            color=0x2b2d31
-        )
+        embed = discord.Embed(title=f"{MESI_ITA[self.mese-1]} {self.anno}", description=genera_calendario_mese(self.anno, self.mese), color=0x2b2d31)
+        embed.add_field(name="", value="Clicca Crea Evento qui sotto per creare un evento nel tag giusto", inline=False)
         return embed
-
 
 async def invia_post_fisso_calendario():
     await bot.wait_until_ready()
