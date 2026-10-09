@@ -1,338 +1,295 @@
-import os, threading, datetime, calendar, re
-from zoneinfo import ZoneInfo
-from flask import Flask
 import discord
-from discord.ext import commands
+from discord import app_commands
+import asyncio
+import os
+import json
+import threading
+import requests
+from flask import Flask
 
 app = Flask(__name__)
-@app.route("/")
-def home(): return "OK"
-def run_web():
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port)
-threading.Thread(target=run_web, daemon=True).start()
+
+@app.route('/')
+def home():
+    try:
+        with open('auto_channels.json','r') as f:
+            count = len(json.load(f))
+    except:
+        count = 0
+    deepl = "ON" if os.getenv("DEEPL_KEY") else "OFF"
+    return f"BLACKOUT Translator Online - DeepL={deepl} - {count} canali - OK"
+
+def run_flask():
+    app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 10000)))
+
+threading.Thread(target=run_flask, daemon=True).start()
+
+def chunk_smart(text, max_len=380):
+    chunks = []
+    while len(text) > max_len:
+        cut = text.rfind(' ', 0, max_len)
+        if cut == -1:
+            cut = text.rfind('\n', 0, max_len)
+        if cut == -1:
+            cut = max_len
+        chunks.append(text[:cut].strip())
+        text = text[cut:].strip()
+    if text:
+        chunks.append(text)
+    return chunks
+
+def deepl_translate(text, target='IT'):
+    """DeepL Free API - 500k chars/mese gratis, non bloccato su Render"""
+    key = os.getenv("DEEPL_KEY")
+    if not key:
+        return None
+    try:
+        # Usa api-free per chiavi free
+        url = "https://api-free.deepl.com/v2/translate"
+        data = {
+            "auth_key": key,
+            "text": text[:4000],
+            "target_lang": target,
+            "source_lang": "EN"
+        }
+        r = requests.post(url, data=data, timeout=15)
+        if r.status_code == 200:
+            j = r.json()
+            trans = j.get("translations", [{}])[0].get("text")
+            if trans:
+                return trans
+        elif r.status_code == 403:
+            # Prova con api.deepl.com (chiave pro)
+            url = "https://api.deepl.com/v2/translate"
+            r = requests.post(url, data=data, timeout=15)
+            if r.status_code == 200:
+                j = r.json()
+                return j.get("translations", [{}])[0].get("text")
+        print(f"[DeepL status {r.status_code}] {r.text[:200]}")
+    except Exception as e:
+        print(f"[DeepL fail] {e}")
+    return None
+
+def mymemory_translate(text):
+    try:
+        r = requests.get("https://api.mymemory.translated.net/get",
+                         params={"q": text[:380], "langpair": "en|it", "de": "blackout@translator.com"},
+                         timeout=15)
+        if r.status_code == 200:
+            j = r.json()
+            t = j.get("responseData", {}).get("translatedText")
+            if t and "QUERY LENGTH" not in t.upper() and "MYMEMORY WARNING" not in t.upper():
+                return t
+    except Exception as e:
+        print(f"[MyMemory fail] {e}")
+    return None
+
+def google_free_translate(text):
+    try:
+        url = "https://translate.googleapis.com/translate_a/single"
+        params = {"client": "gtx", "sl": "en", "tl": "it", "dt": "t", "q": text}
+        r = requests.get(url, params=params, timeout=10, headers={"User-Agent": "Mozilla/5.0"})
+        if r.status_code == 200:
+            data = r.json()
+            if data and isinstance(data[0], list):
+                translated = "".join([item[0] for item in data[0] if item and len(item)>0 and item[0]])
+                if translated:
+                    return translated
+    except:
+        pass
+    return None
+
+def traduci_sync(text: str) -> str:
+    if not text or not text.strip():
+        return text
+    low = text.strip().lower()
+    # Emergenza
+    if low in {"hello world":"ciao mondo","hello":"ciao","hi":"ciao","thanks":"grazie","thank you":"grazie"}:
+        return {"hello world":"ciao mondo","hello":"ciao","hi":"ciao","thanks":"grazie","thank you":"grazie"}[low]
+
+    # 1. DeepL (migliore, non bloccato)
+    res = deepl_translate(text[:4000], 'IT')
+    if res and res.lower().strip() != low:
+        print(f"[DeepL OK] {text[:40]} -> {res[:40]}")
+        return res
+
+    # 2. Google diretto
+    res = google_free_translate(text[:4000])
+    if res and res.lower().strip() != low and res.lower().strip() != text.lower().strip():
+        return res
+
+    # 3. MyMemory
+    res = mymemory_translate(text[:380])
+    if res and res.lower().strip() != low and res.lower().strip() != text.lower().strip():
+        return res
+
+    return text
 
 intents = discord.Intents.default()
 intents.message_content = True
-bot = commands.Bot(command_prefix="!", intents=intents)
+client = discord.Client(intents=intents)
+tree = app_commands.CommandTree(client)
 
-ITALIA = ZoneInfo("Europe/Rome")
-COVER_IMAGE_PATH = "cover_C_corretta_finale.png"
-COVER_FILE_NAME = "cover_C_corretta_finale.png"
-CANALE_FISSO_ID = 1557509286911807629
+AUTO_FILE = "auto_channels.json"
+# Leggi canali fissi da env var per persistenza su Render (es: "123,456,789")
+ENV_CHANNELS = os.getenv("AUTO_CHANNELS", "")
 
-def get_cover_file():
-    if os.path.exists(COVER_IMAGE_PATH):
-        return discord.File(COVER_IMAGE_PATH, filename=COVER_FILE_NAME)
-    return None
-
-def get_ora_italia():
-    return datetime.datetime.now(ITALIA)
-
-class EventoPartecipaView(discord.ui.View):
-    def __init__(self, max_partecipanti: int, titolo_evento: str, data_str: str, creatore: str):
-        super().__init__(timeout=None)
-        self.max_p = max_partecipanti
-        self.titolo_evento = titolo_evento
-        self.data_str = data_str
-        self.creatore = creatore
-        self.partecipanti = []
-
-    @discord.ui.button(label="Partecipa", style=discord.ButtonStyle.green, emoji="✅", custom_id="partecipa_btn")
-    async def partecipa(self, interaction: discord.Interaction, button: discord.ui.Button):
-        user_id = interaction.user.id
-        if any(p["id"] == user_id for p in self.partecipanti):
-            await interaction.response.send_message("Hai gia cliccato Partecipa!", ephemeral=True)
-            return
-        if len(self.partecipanti) >= self.max_p:
-            await interaction.response.send_message(f"Evento pieno! Massimo {self.max_p} persone.", ephemeral=True)
-            return
-        self.partecipanti.append({"id": user_id, "name": interaction.user.display_name})
-        embed = discord.Embed(title=f"Evento del {self.data_str}", color=0x00ff88)
-        embed.add_field(name="Titolo", value=self.titolo_evento, inline=False)
-        lista_nomi = "\n".join([f"• {p['name']}" for p in self.partecipanti])
-        valore = f"{len(self.partecipanti)}/{self.max_p} persone\n{lista_nomi}" if self.partecipanti else f"0/{self.max_p} persone"
-        embed.add_field(name="Partecipanti", value=valore, inline=False)
-        embed.set_footer(text=f"Creato da {self.creatore}")
-        if len(self.partecipanti) >= self.max_p:
-            button.disabled = True
-            button.label = "Evento Pieno"
-            button.style = discord.ButtonStyle.gray
-        await interaction.response.edit_message(embed=embed, view=self)
-
-    @discord.ui.button(label="Esci", style=discord.ButtonStyle.red, emoji="❌", custom_id="esci_btn")
-    async def esci(self, interaction: discord.Interaction, button: discord.ui.Button):
-        user_id = interaction.user.id
-        trovato = next((p for p in self.partecipanti if p["id"] == user_id), None)
-        if not trovato:
-            await interaction.response.send_message("Non stai partecipando.", ephemeral=True)
-            return
-        self.partecipanti = [p for p in self.partecipanti if p["id"] != user_id]
-        embed = discord.Embed(title=f"Evento del {self.data_str}", color=0x00ff88)
-        embed.add_field(name="Titolo", value=self.titolo_evento, inline=False)
-        if self.partecipanti:
-            lista_nomi = "\n".join([f"• {p['name']}" for p in self.partecipanti])
-            valore = f"{len(self.partecipanti)}/{self.max_p} persone\n{lista_nomi}"
-        else:
-            valore = f"0/{self.max_p} persone"
-        embed.add_field(name="Partecipanti", value=valore, inline=False)
-        embed.set_footer(text=f"Creato da {self.creatore}")
-        for child in self.children:
-            if isinstance(child, discord.ui.Button) and child.custom_id == "partecipa_btn":
-                child.disabled = False
-                child.label = "Partecipa"
-                child.style = discord.ButtonStyle.green
-        await interaction.response.edit_message(embed=embed, view=self)
-
-class CreaEventoModal(discord.ui.Modal, title="Crea Evento"):
-    def __init__(self):
-        super().__init__()
-        adesso = get_ora_italia()
-        data_oggi = f"{adesso.day:02d}/{adesso.month:02d}/{adesso.year}"
-        self.data = discord.ui.TextInput(label=f"Data GG/MM/AAAA - Oggi {data_oggi}", placeholder=f"Es: {data_oggi}", default=data_oggi, max_length=10, required=True)
-        self.ora = discord.ui.TextInput(label=f"Ora HH:MM - Ora {adesso.strftime('%H:%M')}", placeholder="Es: 21:00", default=adesso.strftime('%H:%M'), max_length=5, required=True)
-        self.titolo = discord.ui.TextInput(label="Titolo evento (scrivi gioco)", placeholder="Es: ARC Raiders LIVE", max_length=100, required=True)
-        self.max_p = discord.ui.TextInput(label="Max partecipanti 1-99", placeholder="Es: 3", default="3", max_length=2, required=True)
-        self.add_item(self.data)
-        self.add_item(self.ora)
-        self.add_item(self.titolo)
-        self.add_item(self.max_p)
-
-    async def on_submit(self, interaction: discord.Interaction):
-        adesso = get_ora_italia()
-        data_str_raw = self.data.value.strip()
-        m = re.match(r"^(\d{1,2})[/\-\.](\d{1,2})[/\-\.](\d{4})$", data_str_raw)
-        if not m:
-            await interaction.response.send_message("Data non valida! Usa GG/MM/AAAA", ephemeral=True)
-            return
-        try:
-            g = int(m.group(1)); mese = int(m.group(2)); anno = int(m.group(3))
-            max_g = calendar.monthrange(anno, mese)[1]
-            if not (1 <= g <= 31 and 1 <= mese <= 12 and g <= max_g): raise ValueError()
-        except Exception as e:
-            await interaction.response.send_message(f"Data non valida: {e}", ephemeral=True)
-            return
-        ora_str = self.ora.value.strip()
-        try:
-            if ":" in ora_str:
-                h,mm = map(int, ora_str.split(":"))
-            else:
-                h = int(ora_str); mm = 0
-            if not (0 <= h <= 23 and 0 <= mm <= 59): raise ValueError()
-        except:
-            await interaction.response.send_message("Ora non valida. Usa HH:MM", ephemeral=True)
-            return
-        try:
-            max_partecipanti = int(self.max_p.value.strip())
-            if not (1 <= max_partecipanti <= 99): raise ValueError()
-        except:
-            await interaction.response.send_message("Max partecipanti non valido!", ephemeral=True)
-            return
-        data_evento = datetime.datetime(anno, mese, g, h, mm, tzinfo=ITALIA)
-        if data_evento <= adesso:
-            await interaction.response.send_message(f"Data nel passato! Ora e' {adesso.strftime('%d/%m/%Y %H:%M')}", ephemeral=True)
-            return
-
-        data_formattata = f"{g:02d}/{mese:02d}/{anno} ore {h:02d}:{mm:02d}"
-        embed = discord.Embed(title=f"Evento del {data_formattata}", color=0x00ff88)
-        embed.add_field(name="Titolo", value=self.titolo.value, inline=False)
-        embed.add_field(name="Partecipanti", value=f"0/{max_partecipanti} persone", inline=False)
-        embed.set_footer(text=f"Creato da {interaction.user.display_name}")
-        view = EventoPartecipaView(max_partecipanti=max_partecipanti, titolo_evento=self.titolo.value, data_str=data_formattata, creatore=interaction.user.display_name)
-
-        try:
-            forum = interaction.client.get_channel(CANALE_FISSO_ID)
-            if not forum:
-                forum = await interaction.client.fetch_channel(CANALE_FISSO_ID)
-
-            if isinstance(forum, discord.ForumChannel):
-                titolo_lower = self.titolo.value.lower()
-                print(f"[DEBUG TAG] Titolo ricevuto: '{self.titolo.value}' -> lower: '{titolo_lower}'")
-                print(f"[DEBUG TAG] Tag disponibili: {[t.name for t in forum.available_tags]}")
-
-                def trova_tag():
-                    tags_sorted = sorted(forum.available_tags, key=lambda t: len(t.name), reverse=True)
-                    # 1. match esatto nome tag dentro titolo
-                    for tag in tags_sorted:
-                        nome = tag.name.lower().strip()
-                        if "crea evento" in nome:
-                            continue
-                        if nome in titolo_lower:
-                            print(f"[DEBUG TAG] Match diretto: tag '{tag.name}' trovato in titolo")
-                            return tag
-                    # 2. match per parole chiave
-                    parole_titolo = titolo_lower.split()
-                    for tag in tags_sorted:
-                        nome = tag.name.lower().strip()
-                        if "crea evento" in nome:
-                            continue
-                        # se una parola del tag è nel titolo
-                        for parola in nome.split():
-                            if len(parola) >= 3 and parola in titolo_lower:
-                                print(f"[DEBUG TAG] Match parola: '{parola}' di tag '{tag.name}' in titolo")
-                                return tag
-                        # se una parola del titolo è nel nome tag
-                        for parola in parole_titolo:
-                            if len(parola) >= 3 and parola in nome:
-                                print(f"[DEBUG TAG] Match inverso: parola titolo '{parola}' in tag '{tag.name}'")
-                                return tag
-                    # 3. mapping speciale per abbreviazioni
-                    mapping_speciale = {
-                        "arc": ["arc raiders"],
-                        "raiders": ["arc raiders"],
-                        "arma": ["arma reforger", "arma"],
-                        "reforger": ["arma reforger"],
-                        "cod": ["call of duty", "cod"],
-                        "warzone": ["call of duty", "warzone"],
-                        "dbd": ["dead by daylight"],
-                        "ets2": ["euro truck", "ets2"],
-                        "farming": ["farming simulator"],
-                        "fn": ["fortnite"],
-                    }
-                    for parola in parole_titolo:
-                        if parola in mapping_speciale:
-                            for nome_tag_cercato in mapping_speciale[parola]:
-                                for tag in forum.available_tags:
-                                    if nome_tag_cercato in tag.name.lower():
-                                        print(f"[DEBUG TAG] Match mapping: parola '{parola}' -> tag '{tag.name}'")
-                                        return tag
-                    # 4. fallback Altro
-                    for tag in forum.available_tags:
-                        if "altro" in tag.name.lower():
-                            print(f"[DEBUG TAG] Fallback Altro: {tag.name}")
-                            return tag
-                    # 5. primo tag utile
-                    for tag in forum.available_tags:
-                        if "crea evento" not in tag.name.lower():
-                            print(f"[DEBUG TAG] Fallback primo utile: {tag.name}")
-                            return tag
-                    return None
-
-                tag_scelto = trova_tag()
-                applied = [tag_scelto] if tag_scelto else []
-                
-                # IMPORTANTE: niente cover per gli eventi, solo embed + bottoni
-                await forum.create_thread(
-                    name=f"{self.titolo.value} - {data_formattata}",
-                    content=f"**{self.titolo.value}**\n📅 {data_formattata} - Creato da {interaction.user.mention}",
-                    embed=embed,
-                    view=view,
-                    applied_tags=applied
-                )
-                tag_nome = tag_scelto.name if tag_scelto else "Altro"
-                await interaction.response.send_message(f"✅ Evento creato in <#{CANALE_FISSO_ID}> con tag **{tag_nome}**!\n📅 {data_formattata}\n**Senza cover** come richiesto", ephemeral=True)
-            else:
-                await interaction.response.send_message(f"✅ Evento creato per {data_formattata}", ephemeral=True)
-                await interaction.channel.send(embed=embed, view=view)
-        except Exception as e:
-            import traceback; traceback.print_exc()
-            print(f"[ERRORE EVENTO] {e}")
-            await interaction.response.send_message(f"Errore creazione: {e}", ephemeral=True)
-
-class CreaEventoButton(discord.ui.Button):
-    def __init__(self):
-        super().__init__(label="Crea Evento", style=discord.ButtonStyle.green, emoji="📅")
-    async def callback(self, interaction: discord.Interaction):
-        await interaction.response.send_modal(CreaEventoModal())
-
-class SoloBottoneView(discord.ui.View):
-    def __init__(self):
-        super().__init__(timeout=None)
-        self.add_item(CreaEventoButton())
-    def get_embed(self):
-        embed = discord.Embed(title="Crea il tuo Evento Qui - Calendario Eventi", description="Clicca **Crea Evento** qui sotto per creare un evento nel tag giusto", color=0x2b2d31)
-        return embed
-
-async def invia_post_fisso_calendario():
-    await bot.wait_until_ready()
+def load_auto():
+    channels = set()
+    # 1. Da file (se esiste)
     try:
-        canale = bot.get_channel(CANALE_FISSO_ID)
-        if not canale:
-            canale = await bot.fetch_channel(CANALE_FISSO_ID)
-        if not canale:
-            return
-        if isinstance(canale, discord.ForumChannel):
-            for thread in canale.threads:
-                if "Crea il tuo Evento Qui" in thread.name and thread.owner_id == bot.user.id:
-                    print("Guida già presente, skip")
-                    return
-        else:
-            async for msg in canale.history(limit=30):
-                if msg.author == bot.user and msg.embeds and any("Crea il tuo Evento Qui" in (e.title or "") for e in msg.embeds):
-                    print("Guida già presente")
-                    return
-        view = SoloBottoneView()
-        embed = view.get_embed()
-        file_cover = get_cover_file()
-        if file_cover:
-            embed.set_image(url=f"attachment://{COVER_FILE_NAME}")
-        if isinstance(canale, discord.ForumChannel):
-            tag_crea = None
-            for t in canale.available_tags:
-                if "Crea Evento" in t.name:
-                    tag_crea = t
-                    break
-            tags = [tag_crea] if tag_crea else []
-            await canale.create_thread(name="Crea il tuo Evento Qui", content="**Crea il tuo Evento Qui - Calendario Eventi**", embed=embed, view=view, applied_tags=tags, file=file_cover)
-        else:
-            await canale.send(embed=embed, view=view, file=file_cover)
+        with open(AUTO_FILE,'r') as f:
+            channels.update(set(json.load(f)))
+    except:
+        pass
+    # 2. Da env var (persistente su Render)
+    if ENV_CHANNELS:
+        try:
+            for cid in ENV_CHANNELS.split(","):
+                cid = cid.strip()
+                if cid.isdigit():
+                    channels.add(int(cid))
+        except Exception as e:
+            print(f"ENV_CHANNELS parse error {e}")
+    return channels
+
+def save_auto(ch):
+    try:
+        with open(AUTO_FILE,'w') as f:
+            json.dump(list(ch), f)
+        # Log per aiutare a creare ENV var
+        if ch:
+            print(f"💾 Canali salvati: {','.join(map(str,ch))} -> Metti questo in ENV AUTO_CHANNELS su Render per renderlo permanente!")
     except Exception as e:
-        print(f"Errore guida: {e}")
-        import traceback; traceback.print_exc()
+        print(f"Save error {e}")
 
-@bot.event
+auto_channels = load_auto()
+
+@client.event
 async def on_ready():
-    print(f"Online come {bot.user}")
+    deepl_status = "ON" if os.getenv("DEEPL_KEY") else "OFF (metti DEEPL_KEY su Render!)"
+    print(f"Bot ONLINE {client.user} | {len(auto_channels)} canali | DeepL={deepl_status}")
     try:
-        await bot.tree.sync()
-        print("Sync OK")
+        await tree.sync()
+    except Exception as e:
+        print(f"Sync error {e}")
+
+@client.event
+async def on_message(message):
+    try:
+        if client.user and message.author.id == client.user.id:
+            return
+    except:
+        pass
+    if "Translated from" in (message.content or ""):
+        return
+    if message.embeds:
+        for em in message.embeds:
+            if em.footer and em.footer.text and "BLACKOUT" in em.footer.text:
+                return
+    # AUTO-RECOVERY: se è PatchBot o webhook e il canale non è in lista, riattiva automaticamente
+    # Questo fixa il problema "dopo un po non traduce piu" di Render
+    if message.channel.id not in auto_channels:
+        is_patchbot = False
+        try:
+            # PatchBot, webhook, o embed con WARDOGS / patch notes
+            if message.author.bot:
+                is_patchbot = True
+            if message.embeds:
+                for em in message.embeds:
+                    title = (em.title or "").lower()
+                    desc = (em.description or "").lower()
+                    if "wardogs" in title or "wardogs" in desc or "hotfix" in title or "hotfix" in desc or "balance" in desc or "dead by daylight" in title.lower():
+                        is_patchbot = True
+        except:
+            pass
+        
+        if is_patchbot:
+            print(f"🔄 Auto-recovery: riattivo auto in #{message.channel.name} ({message.channel.id}) dopo restart Render")
+            auto_channels.add(message.channel.id)
+            save_auto(auto_channels)
+        else:
+            return
+
+    parts = []
+    if message.content and message.content.strip():
+        txt = message.content.strip()
+        if "will now receive notifications for" not in txt and "will no longer receive" not in txt:
+            parts.append(txt)
+    if message.embeds:
+        for emb in message.embeds:
+            if emb.title:
+                parts.append(emb.title)
+            if emb.description:
+                parts.append(emb.description)
+            for f in emb.fields:
+                if f.value:
+                    parts.append(f.value)
+    
+    orig = "\n".join(parts).strip()
+    if not orig or len(orig) < 3:
+        return
+    if "will now receive notifications for" in orig.lower() and len(orig) < 300:
+        embed_only = []
+        for emb in message.embeds:
+            if emb.title:
+                embed_only.append(emb.title)
+            if emb.description:
+                embed_only.append(emb.description)
+        if embed_only:
+            orig = "\n".join(embed_only).strip()
+        else:
+            return
+
+    try:
+        if len(orig) > 380:
+            chunks = chunk_smart(orig, 380)
+            trad_parts = [traduci_sync(c) for c in chunks]
+            trad = "\n".join(trad_parts)
+        else:
+            trad = await asyncio.to_thread(traduci_sync, orig)
+        
+        if trad and trad.strip() and trad.lower().strip() != orig.lower().strip():
+            if len(trad) > 3500:
+                trad = trad[:3500] + "..."
+            emb = discord.Embed(description=f"**{trad}**", color=0x00ffcc)
+            emb.set_footer(text=f"Translated from #{message.channel.name} by BLACKOUT | /traduci_stop per fermare")
+            await message.channel.send(embed=emb)
+    except Exception as e:
+        print(f"[AUTO] Errore: {e}")
+
+@tree.command(name="traduci", description="Traduci EN->IT o attiva auto")
+@app_commands.describe(testo="Testo da tradurre (vuoto=attiva auto)")
+async def traduci(interaction: discord.Interaction, testo: str = None):
+    await interaction.response.defer(thinking=True)
+    try:
+        if not testo:
+            auto_channels.add(interaction.channel.id)
+            save_auto(auto_channels)
+            await interaction.followup.send(f"✅ Auto ATTIVATA in <#{interaction.channel.id}>! Usa /traduci_stop per fermare.", ephemeral=True)
+            return
+        if len(testo) > 380:
+            chunks = chunk_smart(testo, 380)
+            finale = "\n".join([await asyncio.to_thread(traduci_sync, c) for c in chunks])
+        else:
+            finale = await asyncio.to_thread(traduci_sync, testo)
+        await interaction.followup.send(f"**{finale[:3500]}**")
     except Exception as e:
         print(e)
-    bot.loop.create_task(invia_post_fisso_calendario())
+        await interaction.followup.send(f"Errore {e}", ephemeral=True)
 
-@bot.tree.command(name="calendario", description="Mostra calendario + crea evento")
-async def calendario(interaction: discord.Interaction):
-    view = SoloBottoneView()
-    embed = view.get_embed()
-    file_cover = get_cover_file()
-    if file_cover:
-        embed.set_image(url=f"attachment://{file_cover.filename}")
-    await interaction.response.send_message("✅ Calendario inviato!", ephemeral=True)
-    await interaction.channel.send(embed=embed, view=view, file=file_cover)
+@tree.command(name="traduci_stop", description="Ferma auto")
+async def traduci_stop(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
+    auto_channels.discard(interaction.channel.id)
+    save_auto(auto_channels)
+    await interaction.followup.send(f"🛑 Auto DISATTIVATA in <#{interaction.channel.id}>", ephemeral=True)
 
-@bot.tree.command(name="setup_calendario", description="Pubblica il post fisso")
-async def setup_calendario(interaction: discord.Interaction):
-    try:
-        canale = bot.get_channel(CANALE_FISSO_ID)
-        if not canale:
-            canale = await bot.fetch_channel(CANALE_FISSO_ID)
-        view = SoloBottoneView()
-        embed = view.get_embed()
-        file_cover = get_cover_file()
-        if file_cover:
-            embed.set_image(url=f"attachment://{file_cover.filename}")
-        if isinstance(canale, discord.ForumChannel):
-            tag_crea = None
-            for t in canale.available_tags:
-                if "Crea Evento" in t.name:
-                    tag_crea = t
-                    break
-            tags = [tag_crea] if tag_crea else []
-            await canale.create_thread(name="Crea il tuo Evento Qui", content="**Crea il tuo Evento Qui - Calendario Eventi**", embed=embed, view=view, applied_tags=tags, file=file_cover)
-        else:
-            await canale.send(embed=embed, view=view, file=file_cover)
-        await interaction.response.send_message(f"✅ Post guida pubblicato in <#{CANALE_FISSO_ID}>", ephemeral=True)
-    except Exception as e:
-        import traceback; traceback.print_exc()
-        await interaction.response.send_message(f"Errore: {e}", ephemeral=True)
-
-@bot.command(name="calendario")
-async def calendario_prefix(ctx):
-    view = SoloBottoneView()
-    embed = view.get_embed()
-    file_cover = get_cover_file()
-    if file_cover:
-        embed.set_image(url=f"attachment://{file_cover.filename}")
-    await ctx.send(embed=embed, view=view, file=file_cover)
-
-bot.run(os.getenv("DISCORD_TOKEN"))
+TOKEN = os.getenv("DISCORD_TOKEN")
+if not TOKEN:
+    print("❌ Manca DISCORD_TOKEN!")
+    import time
+    while True:
+        time.sleep(3600)
+else:
+    client.run(TOKEN)
