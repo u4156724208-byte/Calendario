@@ -19,6 +19,15 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 ITALIA = ZoneInfo("Europe/Rome")
 MESI_ITA = ["Gennaio","Febbraio","Marzo","Aprile","Maggio","Giugno","Luglio","Agosto","Settembre","Ottobre","Novembre","Dicembre"]
 
+# Cover finale con logo Blackout grande in alto a sinistra
+COVER_IMAGE_PATH = "cover_C_corretta_finale.png"
+COVER_FILE_NAME = "cover_C_corretta_finale.png"
+
+def get_cover_file():
+    if os.path.exists(COVER_IMAGE_PATH):
+        return discord.File(COVER_IMAGE_PATH, filename=COVER_FILE_NAME)
+    return None
+
 def get_ora_italia():
     return datetime.datetime.now(ITALIA)
 
@@ -211,40 +220,53 @@ async def invia_post_fisso_calendario():
         if not canale:
             print(f"Canale {CANALE_FISSO_ID} non trovato")
             return
-        # Controlla se c'è già un post del bot nelle ultime 30 msgs per non spammare
         async for msg in canale.history(limit=30):
             if msg.author == bot.user:
-                # check if it's our calendar post
                 if msg.embeds and any("Clicca Crea Evento" in str(f.value) for e in msg.embeds for f in e.fields):
                     print("Post fisso già presente, skip")
                     return
-                # also check forum threads
                 if hasattr(msg, 'thread') and msg.thread:
                     print("Post fisso già presente, skip")
                     return
         adesso = get_ora_italia()
         view = SoloBottoneView(anno=adesso.year, mese=adesso.month)
         embed = view.get_embed()
+        embed.set_image(url=f"attachment://{COVER_FILE_NAME}")
+        embed.title = "Crea il tuo Evento Qui"
+        file_cover = get_cover_file()
 
-        # Se è un canale Forum (come nel tuo screenshot), crea un post del forum
         if isinstance(canale, discord.ForumChannel):
-            # cerca tag "Crea Evento" se esiste
             tag_crea = None
             for t in canale.available_tags:
                 if "Crea Evento" in t.name:
                     tag_crea = t
                     break
             tags = [tag_crea] if tag_crea else []
-            await canale.create_thread(
-                name="Crea il tuo Evento Qui",
-                content="**Crea il tuo Evento Qui**\n\nClicca Crea Evento qui sotto per creare un evento nel tag giusto",
-                embed=embed,
-                view=view,
-                applied_tags=tags
-            )
-            print(f"Post forum creato in {canale.name}")
+            if file_cover:
+                await canale.create_thread(
+                    name="Crea il tuo Evento Qui",
+                    content="**Crea il tuo Evento Qui - Calendario Eventi**",
+                    embed=embed,
+                    view=view,
+                    applied_tags=tags,
+                    file=file_cover
+                )
+            else:
+                await canale.create_thread(
+                    name="Crea il tuo Evento Qui",
+                    content="**Crea il tuo Evento Qui**
+
+Clicca Crea Evento qui sotto per creare un evento nel tag giusto",
+                    embed=embed,
+                    view=view,
+                    applied_tags=tags
+                )
+            print(f"Post forum creato in {canale.name} con cover Blackout")
         else:
-            await canale.send(content="**Crea il tuo Evento Qui**", embed=embed, view=view)
+            if file_cover:
+                await canale.send(content="**Crea il tuo Evento Qui**", embed=embed, view=view, file=file_cover)
+            else:
+                await canale.send(content="**Crea il tuo Evento Qui**", embed=embed, view=view)
             print(f"Post fisso inviato in {canale.name}")
     except Exception as e:
         print(f"Errore invio post fisso: {e}")
@@ -270,8 +292,14 @@ async def on_ready():
 async def calendario(interaction: discord.Interaction):
     adesso = get_ora_italia()
     view = SoloBottoneView(anno=adesso.year, mese=adesso.month)
+    embed = view.get_embed()
+    embed.set_image(url=f"attachment://{COVER_FILE_NAME}")
+    file_cover = get_cover_file()
     await interaction.response.send_message("✅ Calendario inviato qui sotto!", ephemeral=True)
-    await interaction.channel.send(embed=view.get_embed(), view=view)
+    if file_cover:
+        await interaction.channel.send(embed=embed, view=view, file=file_cover)
+    else:
+        await interaction.channel.send(embed=embed, view=view)
 
 @bot.tree.command(name="setup_calendario", description="Pubblica il post fisso con calendario nel canale dedicato")
 async def setup_calendario(interaction: discord.Interaction):
@@ -282,6 +310,8 @@ async def setup_calendario(interaction: discord.Interaction):
         adesso = get_ora_italia()
         view = SoloBottoneView(anno=adesso.year, mese=adesso.month)
         embed = view.get_embed()
+        embed.set_image(url=f"attachment://{COVER_FILE_NAME}")
+        file_cover = get_cover_file()
         if isinstance(canale, discord.ForumChannel):
             tag_crea = None
             for t in canale.available_tags:
@@ -289,16 +319,29 @@ async def setup_calendario(interaction: discord.Interaction):
                     tag_crea = t
                     break
             tags = [tag_crea] if tag_crea else []
-            await canale.create_thread(
-                name="Crea il tuo Evento Qui",
-                content="**Crea il tuo Evento Qui**",
-                embed=embed,
-                view=view,
-                applied_tags=tags
-            )
+            if file_cover:
+                await canale.create_thread(
+                    name="Crea il tuo Evento Qui",
+                    content="**Crea il tuo Evento Qui - Calendario Eventi**",
+                    embed=embed,
+                    view=view,
+                    applied_tags=tags,
+                    file=file_cover
+                )
+            else:
+                await canale.create_thread(
+                    name="Crea il tuo Evento Qui",
+                    content="**Crea il tuo Evento Qui**",
+                    embed=embed,
+                    view=view,
+                    applied_tags=tags
+                )
         else:
-            await canale.send(content="**Crea il tuo Evento Qui**", embed=embed, view=view)
-        await interaction.response.send_message(f"✅ Post pubblicato in <#{CANALE_FISSO_ID}>", ephemeral=True)
+            if file_cover:
+                await canale.send(content="**Crea il tuo Evento Qui**", embed=embed, view=view, file=file_cover)
+            else:
+                await canale.send(content="**Crea il tuo Evento Qui**", embed=embed, view=view)
+        await interaction.response.send_message(f"✅ Post pubblicato in <#{CANALE_FISSO_ID}> con cover Blackout", ephemeral=True)
     except Exception as e:
         import traceback; traceback.print_exc()
         await interaction.response.send_message(f"Errore: {e}", ephemeral=True)
@@ -307,6 +350,12 @@ async def setup_calendario(interaction: discord.Interaction):
 async def calendario_prefix(ctx):
     adesso = get_ora_italia()
     view = SoloBottoneView(anno=adesso.year, mese=adesso.month)
-    await ctx.send(embed=view.get_embed(), view=view)
+    embed = view.get_embed()
+    embed.set_image(url=f"attachment://{COVER_FILE_NAME}")
+    file_cover = get_cover_file()
+    if file_cover:
+        await ctx.send(embed=embed, view=view, file=file_cover)
+    else:
+        await ctx.send(embed=embed, view=view)
 
 bot.run(os.getenv("DISCORD_TOKEN"))
