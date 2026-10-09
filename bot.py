@@ -231,9 +231,10 @@ async def invia_post_fisso_calendario():
         adesso = get_ora_italia()
         view = SoloBottoneView(anno=adesso.year, mese=adesso.month)
         embed = view.get_embed()
-        embed.set_image(url=f"attachment://{COVER_FILE_NAME}")
-        embed.title = "Crea il tuo Evento Qui"
         file_cover = get_cover_file()
+        if file_cover:
+            embed.set_image(url=f"attachment://{COVER_FILE_NAME}")
+        embed.title = "Crea il tuo Evento Qui"
 
         if isinstance(canale, discord.ForumChannel):
             tag_crea = None
@@ -242,26 +243,25 @@ async def invia_post_fisso_calendario():
                     tag_crea = t
                     break
             tags = [tag_crea] if tag_crea else []
-            if file_cover:
-                await canale.create_thread(
-                    name="Crea il tuo Evento Qui",
-                    content="**Crea il tuo Evento Qui - Calendario Eventi**",
-                    embed=embed,
-                    view=view,
-                    applied_tags=tags,
-                    file=file_cover
-                )
-            else:
-                await canale.create_thread(
-                    name="Crea il tuo Evento Qui",
-                    content="**Crea il tuo Evento Qui**
-
-Clicca Crea Evento qui sotto per creare un evento nel tag giusto",
-                    embed=embed,
-                    view=view,
-                    applied_tags=tags
-                )
+            # Forum: crea thread senza file (più compatibile), poi invia cover dentro
+            thread_with_msg = await canale.create_thread(
+                name="Crea il tuo Evento Qui",
+                content="**Crea il tuo Evento Qui - Calendario Eventi**",
+                embed=embed,
+                view=view,
+                applied_tags=tags
+            )
             print(f"Post forum creato in {canale.name} con cover Blackout")
+            # Se abbiamo la cover, inviala nel thread
+            if file_cover:
+                try:
+                    # thread_with_msg.thread è il thread creato
+                    thread = thread_with_msg.thread if hasattr(thread_with_msg, 'thread') else thread_with_msg
+                    file_again = get_cover_file()
+                    if file_again:
+                        await thread.send(file=file_again)
+                except Exception as e:
+                    print(f"Impossibile inviare cover nel thread: {e}")
         else:
             if file_cover:
                 await canale.send(content="**Crea il tuo Evento Qui**", embed=embed, view=view, file=file_cover)
@@ -293,8 +293,9 @@ async def calendario(interaction: discord.Interaction):
     adesso = get_ora_italia()
     view = SoloBottoneView(anno=adesso.year, mese=adesso.month)
     embed = view.get_embed()
-    embed.set_image(url=f"attachment://{COVER_FILE_NAME}")
     file_cover = get_cover_file()
+    if file_cover:
+        embed.set_image(url=f"attachment://{COVER_FILE_NAME}")
     await interaction.response.send_message("✅ Calendario inviato qui sotto!", ephemeral=True)
     if file_cover:
         await interaction.channel.send(embed=embed, view=view, file=file_cover)
@@ -310,8 +311,9 @@ async def setup_calendario(interaction: discord.Interaction):
         adesso = get_ora_italia()
         view = SoloBottoneView(anno=adesso.year, mese=adesso.month)
         embed = view.get_embed()
-        embed.set_image(url=f"attachment://{COVER_FILE_NAME}")
         file_cover = get_cover_file()
+        if file_cover:
+            embed.set_image(url=f"attachment://{COVER_FILE_NAME}")
         if isinstance(canale, discord.ForumChannel):
             tag_crea = None
             for t in canale.available_tags:
@@ -319,23 +321,21 @@ async def setup_calendario(interaction: discord.Interaction):
                     tag_crea = t
                     break
             tags = [tag_crea] if tag_crea else []
+            thread_with_msg = await canale.create_thread(
+                name="Crea il tuo Evento Qui",
+                content="**Crea il tuo Evento Qui - Calendario Eventi**",
+                embed=embed,
+                view=view,
+                applied_tags=tags
+            )
             if file_cover:
-                await canale.create_thread(
-                    name="Crea il tuo Evento Qui",
-                    content="**Crea il tuo Evento Qui - Calendario Eventi**",
-                    embed=embed,
-                    view=view,
-                    applied_tags=tags,
-                    file=file_cover
-                )
-            else:
-                await canale.create_thread(
-                    name="Crea il tuo Evento Qui",
-                    content="**Crea il tuo Evento Qui**",
-                    embed=embed,
-                    view=view,
-                    applied_tags=tags
-                )
+                try:
+                    thread = thread_with_msg.thread if hasattr(thread_with_msg, 'thread') else thread_with_msg
+                    file_again = get_cover_file()
+                    if file_again:
+                        await thread.send(file=file_again)
+                except Exception as e:
+                    print(f"Impossibile inviare cover nel thread: {e}")
         else:
             if file_cover:
                 await canale.send(content="**Crea il tuo Evento Qui**", embed=embed, view=view, file=file_cover)
@@ -351,8 +351,9 @@ async def calendario_prefix(ctx):
     adesso = get_ora_italia()
     view = SoloBottoneView(anno=adesso.year, mese=adesso.month)
     embed = view.get_embed()
-    embed.set_image(url=f"attachment://{COVER_FILE_NAME}")
     file_cover = get_cover_file()
+    if file_cover:
+        embed.set_image(url=f"attachment://{COVER_FILE_NAME}")
     if file_cover:
         await ctx.send(embed=embed, view=view, file=file_cover)
     else:
