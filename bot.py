@@ -1,9 +1,8 @@
-import os, threading, datetime, calendar, re, asyncio
+import os, threading, datetime, calendar, re
 from zoneinfo import ZoneInfo
 from flask import Flask
 import discord
 from discord.ext import commands
-from PIL import Image, ImageDraw, ImageFont
 
 app = Flask(__name__)
 @app.route("/")
@@ -20,150 +19,17 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 ITALIA = ZoneInfo("Europe/Rome")
 MESI_ITA = ["Gennaio","Febbraio","Marzo","Aprile","Maggio","Giugno","Luglio","Agosto","Settembre","Ottobre","Novembre","Dicembre"]
 
-def get_ora_italia():
-    return datetime.datetime.now(ITALIA)
-
-# GENERATORE IMMAGINE CALENDARIO AUTO - si aggiorna col mese corrente
-def create_calendar_image(year, month, output_path="/tmp/calendario_auto.png"):
-    # Crea cover completa con logo + titolo + calendario dinamico
-    W, H = 1200, 750
-    bg_color = (13, 16, 28)
-    img = Image.new("RGB", (W, H), bg_color)
-    draw = ImageDraw.Draw(img)
-    
-    # Sfondo con leggera vignettatura blu
-    try:
-        font_title_big = ImageFont.truetype("/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf", 62)
-        font_sub = ImageFont.truetype("/usr/share/fonts/dejavu/DejaVuSans.ttf", 28)
-        font_header = ImageFont.truetype("/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf", 22)
-        font_days = ImageFont.truetype("/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf", 32)
-        font_month = ImageFont.truetype("/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf", 20)
-    except:
-        font_title_big = ImageFont.load_default()
-        font_sub = ImageFont.load_default()
-        font_header = ImageFont.load_default()
-        font_days = ImageFont.load_default()
-        font_month = ImageFont.load_default()
-
-    # Logo Blackout - usa logo reale se presente, altrimenti fallback B
-    logo_file = None
-    for p in ["logo_blackout.png", "cover_C_corretta_finale.png", "85D16C61-FB03-448D-8E7C-F488E2101FB7.png", "/tmp/logo_blackout.png"]:
-        if os.path.exists(p):
-            logo_file = p
-            break
-    if logo_file:
-        try:
-            logo = Image.open(logo_file).convert("RGBA")
-            size = min(logo.size)
-            left = (logo.width - size)//2
-            top = (logo.height - size)//2
-            logo = logo.crop((left, top, left+size, top+size))
-            logo = logo.resize((150, 150), Image.LANCZOS)
-            mask = Image.new("L", (150, 150), 0)
-            md = ImageDraw.Draw(mask)
-            md.ellipse([0,0,150,150], fill=255)
-            border = Image.new("RGBA", (156,156), (0,0,0,0))
-            bd = ImageDraw.Draw(border)
-            bd.ellipse([0,0,156,156], outline=(80,220,255,255), width=3)
-            img.paste(logo, (35, 30), mask)
-            img.paste(border, (32, 27), border)
-        except Exception as e:
-            print(f"Errore logo {e}, uso fallback B")
-            logo_x, logo_y = 40, 35
-            logo_r = 75
-            draw.ellipse([logo_x, logo_y, logo_x+logo_r*2, logo_y+logo_r*2], outline=(80, 220, 255), width=3)
-            try:
-                font_b = ImageFont.truetype("/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf", 68)
-            except:
-                font_b = font_title_big
-            draw.text((logo_x+42, logo_y+28), "B", fill=(120, 255, 230), font=font_b, anchor="mm")
-    else:
-        logo_x, logo_y = 40, 35
-        logo_r = 75
-        draw.ellipse([logo_x, logo_y, logo_x+logo_r*2, logo_y+logo_r*2], outline=(80, 220, 255), width=3)
-        try:
-            font_b = ImageFont.truetype("/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf", 68)
-        except:
-            font_b = font_title_big
-        draw.text((logo_x+42, logo_y+28), "B", fill=(120, 255, 230), font=font_b, anchor="mm")
-
-    # Titolo
-    titolo1 = "Crea il tuo "
-    titolo2 = "Evento Qui"
-    # Misura
-    x_title = 220
-    y_title = 45
-    draw.text((x_title, y_title), titolo1, fill=(255,255,255), font=font_title_big)
-    w1 = draw.textbbox((0,0), titolo1, font=font_title_big)[2]
-    draw.text((x_title + w1, y_title), titolo2, fill=(120, 255, 220), font=font_title_big)
-    
-    # Sottotitolo mese anno
-    sub = f"{MESI_ITA[month-1]} {year} - Calendario Eventi"
-    draw.text((x_title, y_title+75), sub, fill=(140, 160, 255), font=font_sub)
-
-    # Calendario grid - stile come tua foto
-    cell_w = 145
-    cell_h = 68
-    gap_x = 12
-    gap_y = 10
-    start_x = 60
-    start_y = 180
-    giorni_sett = ["LUN", "MAR", "MER", "GIO", "VEN", "SAB", "DOM"]
-    
-    # Header
-    for i, g in enumerate(giorni_sett):
-        x = start_x + i*(cell_w+gap_x)
-        y = start_y
-        draw.rounded_rectangle([x, y, x+cell_w, y+cell_h-8], radius=14, fill=(22, 38, 58), outline=(60, 100, 120))
-        bbox = draw.textbbox((0,0), g, font=font_header)
-        tw = bbox[2]-bbox[0]
-        draw.text((x + (cell_w-tw)/2, y+14), g, fill=(110, 250, 220), font=font_header)
-
-    # Giorni
-    cal = calendar.Calendar(firstweekday=0)
-    month_days = list(cal.itermonthdays(year, month))
-    start_y_days = start_y + cell_h + 12
-    
-    for idx, day in enumerate(month_days):
-        if day == 0:
-            continue
-        col = idx % 7
-        row = idx // 7
-        x = start_x + col*(cell_w+gap_x)
-        y = start_y_days + row*(cell_h+gap_y)
-        draw.rounded_rectangle([x, y, x+cell_w, y+cell_h], radius=14, fill=(20, 28, 48), outline=(45, 65, 95))
-        txt = str(day)
-        bbox = draw.textbbox((0,0), txt, font=font_days)
-        tw = bbox[2]-bbox[0]
-        th = bbox[3]-bbox[1]
-        # Evidenzia oggi se è questo mese
-        adesso = get_ora_italia()
-        if day == adesso.day and month == adesso.month and year == adesso.year:
-            draw.rounded_rectangle([x, y, x+cell_w, y+cell_h], radius=14, fill=(35, 90, 95), outline=(120, 255, 220), width=2)
-            draw.text((x + (cell_w-tw)/2, y + (cell_h-th)/2), txt, fill=(120, 255, 220), font=font_days)
-        else:
-            draw.text((x + (cell_w-tw)/2, y + (cell_h-th)/2), txt, fill=(255,255,255), font=font_days)
-
-    # Icone bottom
-    draw.text((60, H-50), "🎮  🎧  ✨", fill=(80, 120, 200), font=font_sub)
-    # Pill Nuovo Evento
-    pill_x = W-260
-    pill_y = H-60
-    draw.rounded_rectangle([pill_x, pill_y, W-30, H-15], radius=20, fill=(45, 75, 180), outline=(120, 180, 255))
-    draw.text((pill_x+28, pill_y+8), "+ Nuovo Evento", fill=(255,255,255), font=font_month)
-
-    img.save(output_path)
-    return output_path
+# Cover finale con logo Blackout grande in alto a sinistra
+COVER_IMAGE_PATH = "cover_C_corretta_finale.png"
+COVER_FILE_NAME = "cover_C_corretta_finale.png"
 
 def get_cover_file():
-    adesso = get_ora_italia()
-    path = f"/tmp/calendario_{adesso.year}_{adesso.month}.png"
-    create_calendar_image(adesso.year, adesso.month, path)
-    return discord.File(path, filename="calendario.png")
+    if os.path.exists(COVER_IMAGE_PATH):
+        return discord.File(COVER_IMAGE_PATH, filename=COVER_FILE_NAME)
+    return None
 
-# Resta compatibile con vecchio nome
-COVER_IMAGE_PATH = "cover_C_corretta_finale.png"
-COVER_FILE_NAME = "calendario.png"
+def get_ora_italia():
+    return datetime.datetime.now(ITALIA)
 
 def genera_calendario_mese(anno, mese):
     cal = calendar.Calendar(firstweekday=0)
@@ -237,6 +103,7 @@ class EventoPartecipaView(discord.ui.View):
                 child.style = discord.ButtonStyle.green
         await interaction.response.edit_message(embed=embed, view=self)
 
+# MODAL UNICO: data + ora + max partecipanti + titolo
 class CreaEventoModal(discord.ui.Modal, title="Crea Evento - scegli data completa"):
     def __init__(self):
         super().__init__()
@@ -244,8 +111,8 @@ class CreaEventoModal(discord.ui.Modal, title="Crea Evento - scegli data complet
         data_oggi = f"{adesso.day:02d}/{adesso.month:02d}/{adesso.year}"
         self.data = discord.ui.TextInput(label=f"Data (GG/MM/AAAA) - Oggi {data_oggi}", placeholder=f"Es: {data_oggi}", default=data_oggi, max_length=10, required=True)
         self.ora = discord.ui.TextInput(label=f"Ora (HH:MM) - Ora {adesso.strftime('%H:%M')}", placeholder="Es: 21:00", default=adesso.strftime('%H:%M'), max_length=5, required=True)
-        self.titolo = discord.ui.TextInput(label="Titolo evento", placeholder="Es: ARC Raiders LIVE", max_length=100, required=True)
-        self.max_p = discord.ui.TextInput(label="Max partecipanti (1-99)", placeholder="Es: 3", default="3", max_length=2, required=True)
+        self.titolo = discord.ui.TextInput(label="Titolo evento", placeholder="Es: Game Film JustChatting", max_length=100, required=True)
+        self.max_p = discord.ui.TextInput(label="Max partecipanti (1-99) - Esempio 1 2 3", placeholder="Es: 1, 2, 3", default="", max_length=2, required=True)
         self.add_item(self.data)
         self.add_item(self.ora)
         self.add_item(self.titolo)
@@ -253,6 +120,7 @@ class CreaEventoModal(discord.ui.Modal, title="Crea Evento - scegli data complet
 
     async def on_submit(self, interaction: discord.Interaction):
         adesso = get_ora_italia()
+        # Data
         data_str_raw = self.data.value.strip()
         m = re.match(r"^(\d{1,2})[/\-\.](\d{1,2})[/\-\.](\d{4})$", data_str_raw)
         if not m:
@@ -266,6 +134,7 @@ class CreaEventoModal(discord.ui.Modal, title="Crea Evento - scegli data complet
         except Exception as e:
             await interaction.response.send_message(f"Data non valida: {e}", ephemeral=True)
             return
+        # Ora
         ora_str = self.ora.value.strip()
         try:
             if ":" in ora_str:
@@ -276,80 +145,29 @@ class CreaEventoModal(discord.ui.Modal, title="Crea Evento - scegli data complet
         except:
             await interaction.response.send_message("Ora non valida. Usa HH:MM es: 21:00", ephemeral=True)
             return
+        # Max partecipanti - da 1 in poi
         try:
             max_partecipanti = int(self.max_p.value.strip())
-            if not (1 <= max_partecipanti <= 99): raise ValueError()
+            if not (1 <= max_partecipanti <= 99):
+                raise ValueError()
         except:
             await interaction.response.send_message("Max partecipanti non valido! Metti un numero da 1 a 99", ephemeral=True)
             return
+
         data_evento = datetime.datetime(anno, mese, g, h, mm, tzinfo=ITALIA)
         if data_evento <= adesso:
             await interaction.response.send_message(f"Non puoi creare evento nel passato! Hai messo {g:02d}/{mese:02d}/{anno} {h:02d}:{mm:02d} ma ora e' {adesso.strftime('%d/%m/%Y %H:%M')}", ephemeral=True)
             return
 
+        # Crea evento direttamente (senza secondo step)
         data_formattata = f"{g:02d}/{mese:02d}/{anno} ore {h:02d}:{mm:02d}"
         embed = discord.Embed(title=f"Evento del {data_formattata}", color=0x00ff88)
         embed.add_field(name="Titolo", value=self.titolo.value, inline=False)
         embed.add_field(name="Partecipanti", value=f"0/{max_partecipanti} persone", inline=False)
         embed.set_footer(text=f"Creato da {interaction.user.display_name}")
         view = EventoPartecipaView(max_partecipanti=max_partecipanti, titolo_evento=self.titolo.value, data_str=data_formattata, creatore=interaction.user.display_name)
-
-        try:
-            forum = interaction.client.get_channel(CANALE_FISSO_ID)
-            if not forum:
-                forum = await interaction.client.fetch_channel(CANALE_FISSO_ID)
-            if isinstance(forum, discord.ForumChannel):
-                titolo_lower = self.titolo.value.lower()
-                def trova_tag():
-                    tags_sorted = sorted(forum.available_tags, key=lambda t: len(t.name), reverse=True)
-                    for tag in tags_sorted:
-                        nome = tag.name.lower()
-                        if "crea evento" in nome:
-                            continue
-                        if nome in titolo_lower and len(nome) >= 3:
-                            return tag
-                    mapping = {
-                        "arc raiders": ["arc", "raiders"],
-                        "arma reforger": ["arma", "reforger"],
-                        "call of duty": ["cod", "call of duty", "warzone", "mw", "black ops"],
-                        "dead by daylight": ["dead by daylight", "dbd", "dead by dayligh"],
-                        "euro truck": ["euro truck", "ets2", "eurotruck"],
-                        "farming simulator": ["farming", "fs22", "fs25"],
-                        "fortnite": ["fortnite", "fn"],
-                    }
-                    for tag in forum.available_tags:
-                        chiavi = mapping.get(tag.name.lower(), [tag.name.lower()])
-                        for k in chiavi:
-                            if k in titolo_lower:
-                                return tag
-                    for tag in forum.available_tags:
-                        if "altro" in tag.name.lower():
-                            return tag
-                    for tag in forum.available_tags:
-                        if "crea evento" not in tag.name.lower():
-                            return tag
-                    return None
-                tag_scelto = trova_tag()
-                applied = [tag_scelto] if tag_scelto else []
-                await forum.create_thread(
-                    name=f"{self.titolo.value} - {data_formattata}",
-                    content=f"**{self.titolo.value}**\n📅 {data_formattata} - Creato da {interaction.user.mention}",
-                    embed=embed,
-                    view=view,
-                    applied_tags=applied
-                )
-                tag_nome = tag_scelto.name if tag_scelto else "Altro"
-                await interaction.response.send_message(f"✅ Evento creato in <#{CANALE_FISSO_ID}> con tag **{tag_nome}**!", ephemeral=True)
-            else:
-                await interaction.response.send_message(f"✅ Evento creato per {data_formattata}", ephemeral=True)
-                await interaction.channel.send(embed=embed, view=view)
-        except Exception as e:
-            import traceback; traceback.print_exc()
-            try:
-                await interaction.response.send_message(f"✅ Evento creato per {data_formattata} (errore tag: {e})", ephemeral=True)
-                await interaction.channel.send(embed=embed, view=view)
-            except:
-                pass
+        await interaction.response.send_message(f"✅ Evento creato per {data_formattata}", ephemeral=True)
+        await interaction.channel.send(embed=embed, view=view)
 
 class CreaEventoButton(discord.ui.Button):
     def __init__(self):
@@ -366,74 +184,32 @@ class SoloBottoneView(discord.ui.View):
         self.anno = anno or adesso.year
         self.mese = mese or adesso.month
         self.add_item(CreaEventoButton())
+        btn_prev = discord.ui.Button(label="◀️", style=discord.ButtonStyle.gray, row=0)
+        btn_next = discord.ui.Button(label="▶️", style=discord.ButtonStyle.gray, row=0)
+        async def prev_cb(interaction: discord.Interaction):
+            self.mese -= 1
+            if self.mese < 1:
+                self.mese = 12
+                self.anno -= 1
+            embed = discord.Embed(title=f"{MESI_ITA[self.mese-1]} {self.anno}", description=genera_calendario_mese(self.anno, self.mese), color=0x2b2d31)
+            embed.add_field(name="", value="Clicca Crea Evento qui sotto per creare un evento nel tag giusto", inline=False)
+            await interaction.response.edit_message(embed=embed, view=self)
+        async def next_cb(interaction: discord.Interaction):
+            self.mese += 1
+            if self.mese > 12:
+                self.mese = 1
+                self.anno += 1
+            embed = discord.Embed(title=f"{MESI_ITA[self.mese-1]} {self.anno}", description=genera_calendario_mese(self.anno, self.mese), color=0x2b2d31)
+            embed.add_field(name="", value="Clicca Crea Evento qui sotto per creare un evento nel tag giusto", inline=False)
+            await interaction.response.edit_message(embed=embed, view=self)
+        btn_prev.callback = prev_cb
+        btn_next.callback = next_cb
+        self.add_item(btn_prev)
+        self.add_item(btn_next)
     def get_embed(self):
-        embed = discord.Embed(
-            title="Crea il tuo Evento Qui - Calendario Eventi",
-            description="Clicca **Crea Evento** qui sotto per creare un evento nel tag giusto",
-            color=0x2b2d31
-        )
+        embed = discord.Embed(title=f"{MESI_ITA[self.mese-1]} {self.anno}", description=genera_calendario_mese(self.anno, self.mese), color=0x2b2d31)
+        embed.add_field(name="", value="Clicca Crea Evento qui sotto per creare un evento nel tag giusto", inline=False)
         return embed
-
-async def trova_e_aggiorna_copertina():
-    """Trova il post guida del calendario e aggiorna l'immagine con il mese corrente"""
-    try:
-        canale = bot.get_channel(CANALE_FISSO_ID)
-        if not canale:
-            canale = await bot.fetch_channel(CANALE_FISSO_ID)
-        if not canale:
-            return False
-
-        adesso = get_ora_italia()
-        nuovo_file = get_cover_file()
-        view = SoloBottoneView()
-        nuovo_embed = view.get_embed()
-        nuovo_embed.title = f"Crea il tuo Evento Qui - {MESI_ITA[adesso.month-1]} {adesso.year}"
-        nuovo_embed.set_image(url=f"attachment://{nuovo_file.filename}")
-
-        aggiornati = 0
-
-        if isinstance(canale, discord.ForumChannel):
-            # Cerca nei thread attivi
-            for thread in canale.threads:
-                if "Crea il tuo Evento Qui" in thread.name and thread.owner_id == bot.user.id:
-                    try:
-                        # Prendi il primo messaggio del thread (quello con l'immagine)
-                        async for msg in thread.history(limit=1, oldest_first=True):
-                            await msg.edit(embed=nuovo_embed, attachments=[nuovo_file], view=view)
-                            aggiornati += 1
-                            print(f"Aggiornato thread {thread.name} con mese {adesso.month}/{adesso.year}")
-                    except Exception as e:
-                        print(f"Errore aggiornamento thread {thread.id}: {e}")
-            
-            # Cerca anche negli archiviati
-            try:
-                async for thread in canale.archived_threads(limit=100):
-                    if "Crea il tuo Evento Qui" in thread.name and thread.owner_id == bot.user.id:
-                        try:
-                            async for msg in thread.history(limit=1, oldest_first=True):
-                                await msg.edit(embed=nuovo_embed, attachments=[nuovo_file], view=view)
-                                aggiornati += 1
-                        except:
-                            pass
-            except:
-                pass
-        else:
-            # Canale testo normale
-            async for msg in canale.history(limit=100):
-                if msg.author == bot.user and msg.embeds:
-                    if any("Crea il tuo Evento Qui" in (e.title or "") for e in msg.embeds):
-                        try:
-                            await msg.edit(embed=nuovo_embed, attachments=[nuovo_file], view=view)
-                            aggiornati += 1
-                            print(f"Aggiornato messaggio {msg.id} con mese {adesso.month}/{adesso.year}")
-                        except Exception as e:
-                            print(f"Errore aggiornamento msg: {e}")
-
-        return aggiornati > 0
-    except Exception as e:
-        import traceback; traceback.print_exc()
-        print(f"Errore trova_e_aggiorna: {e}")
-        return False
 
 async def invia_post_fisso_calendario():
     await bot.wait_until_ready()
@@ -442,28 +218,20 @@ async def invia_post_fisso_calendario():
         if not canale:
             canale = await bot.fetch_channel(CANALE_FISSO_ID)
         if not canale:
+            print(f"Canale {CANALE_FISSO_ID} non trovato")
             return
-        
-        # Se esiste già, non spammare - ma se è del mese scorso, aggiornalo
         async for msg in canale.history(limit=30):
-            if msg.author == bot.user and msg.embeds:
-                if any("Crea il tuo Evento Qui" in (e.title or "") for e in msg.embeds):
-                    print("Post fisso già presente, skip invio")
+            if msg.author == bot.user:
+                if msg.embeds and any("Clicca Crea Evento" in str(f.value) for e in msg.embeds for f in e.fields):
+                    print("Post fisso già presente, skip")
                     return
-        
-        # Se siamo in un forum, controlla anche i thread
-        if isinstance(canale, discord.ForumChannel):
-            for thread in canale.threads:
-                if "Crea il tuo Evento Qui" in thread.name and thread.owner_id == bot.user.id:
-                    print("Thread guida già presente, skip invio")
-                    return
-
-        view = SoloBottoneView()
-        embed = view.get_embed()
         adesso = get_ora_italia()
-        embed.title = f"Crea il tuo Evento Qui - {MESI_ITA[adesso.month-1]} {adesso.year}"
+        view = SoloBottoneView(anno=adesso.year, mese=adesso.month)
+        embed = view.get_embed()
         file_cover = get_cover_file()
-        embed.set_image(url=f"attachment://{file_cover.filename}")
+        if file_cover:
+            embed.set_image(url=f"attachment://{COVER_FILE_NAME}")
+        embed.title = "Crea il tuo Evento Qui - Calendario Eventi"
 
         if isinstance(canale, discord.ForumChannel):
             tag_crea = None
@@ -472,54 +240,33 @@ async def invia_post_fisso_calendario():
                     tag_crea = t
                     break
             tags = [tag_crea] if tag_crea else []
-            await canale.create_thread(
-                name="Crea il tuo Evento Qui",
-                content=f"**Crea il tuo Evento Qui - Calendario Eventi {MESI_ITA[adesso.month-1]} {adesso.year}**",
-                embed=embed,
-                view=view,
-                applied_tags=tags,
-                file=file_cover
-            )
+            if file_cover:
+                await canale.create_thread(
+                    name="Crea il tuo Evento Qui",
+                    content="**Crea il tuo Evento Qui - Calendario Eventi**",
+                    embed=embed,
+                    view=view,
+                    applied_tags=tags,
+                    file=file_cover
+                )
+            else:
+                await canale.create_thread(
+                    name="Crea il tuo Evento Qui",
+                    content="**Crea il tuo Evento Qui - Calendario Eventi**",
+                    embed=embed,
+                    view=view,
+                    applied_tags=tags
+                )
+            print(f"Post forum creato in {canale.name} con cover Blackout")
         else:
-            await canale.send(content=f"**Crea il tuo Evento Qui - {MESI_ITA[adesso.month-1]} {adesso.year}**", embed=embed, view=view, file=file_cover)
-        print(f"Post fisso inviato con mese {adesso.month}/{adesso.year}")
+            if file_cover:
+                await canale.send(content="**Crea il tuo Evento Qui**", embed=embed, view=view, file=file_cover)
+            else:
+                await canale.send(content="**Crea il tuo Evento Qui**", embed=embed, view=view)
+            print(f"Post fisso inviato in {canale.name}")
     except Exception as e:
         print(f"Errore invio post fisso: {e}")
         import traceback; traceback.print_exc()
-
-# TASK AUTOMATICO: ogni ora controlla se è cambiato il mese, se sì aggiorna l'immagine di copertina
-async def task_aggiornamento_mensile():
-    await bot.wait_until_ready()
-    print("Task aggiornamento mensile avviato")
-    ultimo_mese = get_ora_italia().month
-    ultimo_anno = get_ora_italia().year
-    
-    while not bot.is_closed():
-        try:
-            await asyncio.sleep(3600)  # controlla ogni ora
-            adesso = get_ora_italia()
-            # Se è cambiato mese/anno
-            if adesso.month != ultimo_mese or adesso.year != ultimo_anno:
-                print(f"Nuovo mese rilevato: {MESI_ITA[adesso.month-1]} {adesso.year} - aggiorno copertina")
-                success = await trova_e_aggiorna_copertina()
-                if success:
-                    print(f"Copertina aggiornata a {MESI_ITA[adesso.month-1]} {adesso.year}")
-                else:
-                    print("Nessun post da aggiornare trovato, ne creo uno nuovo")
-                    await invia_post_fisso_calendario()
-                ultimo_mese = adesso.month
-                ultimo_anno = adesso.year
-            
-            # Inoltre, ogni giorno 1 alle 00:05 forza l'aggiornamento (sicurezza)
-            if adesso.day == 1 and adesso.hour == 0 and adesso.minute < 60:
-                # controlla se l'ultimo aggiornamento era vecchio
-                print("E' il primo del mese, forzo aggiornamento copertina")
-                await trova_e_aggiorna_copertina()
-                
-        except Exception as e:
-            print(f"Errore task mensile: {e}")
-            import traceback; traceback.print_exc()
-            await asyncio.sleep(3600)
 
 @bot.event
 async def on_ready():
@@ -536,16 +283,20 @@ async def on_ready():
         except:
             pass
     bot.loop.create_task(invia_post_fisso_calendario())
-    bot.loop.create_task(task_aggiornamento_mensile())
 
 @bot.tree.command(name="calendario", description="Mostra calendario + crea evento")
 async def calendario(interaction: discord.Interaction):
-    view = SoloBottoneView()
+    adesso = get_ora_italia()
+    view = SoloBottoneView(anno=adesso.year, mese=adesso.month)
     embed = view.get_embed()
     file_cover = get_cover_file()
-    embed.set_image(url=f"attachment://{file_cover.filename}")
+    if file_cover:
+        embed.set_image(url=f"attachment://{COVER_FILE_NAME}")
     await interaction.response.send_message("✅ Calendario inviato qui sotto!", ephemeral=True)
-    await interaction.channel.send(embed=embed, view=view, file=file_cover)
+    if file_cover:
+        await interaction.channel.send(embed=embed, view=view, file=file_cover)
+    else:
+        await interaction.channel.send(embed=embed, view=view)
 
 @bot.tree.command(name="setup_calendario", description="Pubblica il post fisso con calendario nel canale dedicato")
 async def setup_calendario(interaction: discord.Interaction):
@@ -553,10 +304,13 @@ async def setup_calendario(interaction: discord.Interaction):
         canale = bot.get_channel(CANALE_FISSO_ID)
         if not canale:
             canale = await bot.fetch_channel(CANALE_FISSO_ID)
-        view = SoloBottoneView()
+        adesso = get_ora_italia()
+        view = SoloBottoneView(anno=adesso.year, mese=adesso.month)
         embed = view.get_embed()
         file_cover = get_cover_file()
-        embed.set_image(url=f"attachment://{file_cover.filename}")
+        if file_cover:
+            embed.set_image(url=f"attachment://{COVER_FILE_NAME}")
+        embed.title = "Crea il tuo Evento Qui - Calendario Eventi"
         if isinstance(canale, discord.ForumChannel):
             tag_crea = None
             for t in canale.available_tags:
@@ -564,27 +318,44 @@ async def setup_calendario(interaction: discord.Interaction):
                     tag_crea = t
                     break
             tags = [tag_crea] if tag_crea else []
-            await canale.create_thread(
-                name="Crea il tuo Evento Qui",
-                content="**Crea il tuo Evento Qui - Calendario Eventi**",
-                embed=embed,
-                view=view,
-                applied_tags=tags,
-                file=file_cover
-            )
+            if file_cover:
+                await canale.create_thread(
+                    name="Crea il tuo Evento Qui",
+                    content="**Crea il tuo Evento Qui - Calendario Eventi**",
+                    embed=embed,
+                    view=view,
+                    applied_tags=tags,
+                    file=file_cover
+                )
+            else:
+                await canale.create_thread(
+                    name="Crea il tuo Evento Qui",
+                    content="**Crea il tuo Evento Qui - Calendario Eventi**",
+                    embed=embed,
+                    view=view,
+                    applied_tags=tags
+                )
         else:
-            await canale.send(content="**Crea il tuo Evento Qui**", embed=embed, view=view, file=file_cover)
-        await interaction.response.send_message(f"✅ Post pubblicato in <#{CANALE_FISSO_ID}> con calendario auto {get_ora_italia().month}/{get_ora_italia().year}", ephemeral=True)
+            if file_cover:
+                await canale.send(content="**Crea il tuo Evento Qui**", embed=embed, view=view, file=file_cover)
+            else:
+                await canale.send(content="**Crea il tuo Evento Qui**", embed=embed, view=view)
+        await interaction.response.send_message(f"✅ Post pubblicato in <#{CANALE_FISSO_ID}> con cover Blackout", ephemeral=True)
     except Exception as e:
         import traceback; traceback.print_exc()
         await interaction.response.send_message(f"Errore: {e}", ephemeral=True)
 
 @bot.command(name="calendario")
 async def calendario_prefix(ctx):
-    view = SoloBottoneView()
+    adesso = get_ora_italia()
+    view = SoloBottoneView(anno=adesso.year, mese=adesso.month)
     embed = view.get_embed()
     file_cover = get_cover_file()
-    embed.set_image(url=f"attachment://{file_cover.filename}")
-    await ctx.send(embed=embed, view=view, file=file_cover)
+    if file_cover:
+        embed.set_image(url=f"attachment://{COVER_FILE_NAME}")
+    if file_cover:
+        await ctx.send(embed=embed, view=view, file=file_cover)
+    else:
+        await ctx.send(embed=embed, view=view)
 
 bot.run(os.getenv("DISCORD_TOKEN"))
