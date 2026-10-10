@@ -136,9 +136,8 @@ class CreaEventoModal(discord.ui.Modal, title="Crea Evento"):
         data_formattata = f"{g:02d}/{mese:02d}/{anno} ore {h:02d}:{mm:02d}"
         embed = discord.Embed(title=f"Evento del {data_formattata}", color=0x00ff88)
         embed.add_field(name="Titolo", value=self.titolo.value, inline=False)
-        embed.add_field(name="👤 Creatore", value=f"{interaction.user.display_name} ({interaction.user.mention})", inline=False)
         embed.add_field(name="Partecipanti", value=f"0/{max_partecipanti} persone", inline=False)
-        embed.set_footer(text=f"Creato da {interaction.user.display_name} • {data_formattata}")
+        embed.set_footer(text=f"Creato da {interaction.user.display_name}")
         view = EventoPartecipaView(max_partecipanti=max_partecipanti, titolo_evento=self.titolo.value, data_str=data_formattata, creatore=interaction.user.display_name)
 
         try:
@@ -215,7 +214,7 @@ class CreaEventoModal(discord.ui.Modal, title="Crea Evento"):
                 # IMPORTANTE: niente cover per gli eventi, solo embed + bottoni
                 await forum.create_thread(
                     name=f"{self.titolo.value} - {data_formattata}",
-                    content=f"**{self.titolo.value}**\n📅 {data_formattata}\n👤 Creato da {interaction.user.mention} - {interaction.user.display_name}",
+                    content=f"**{self.titolo.value}**\n📅 {data_formattata} - Creato da {interaction.user.mention}",
                     embed=embed,
                     view=view,
                     applied_tags=applied
@@ -232,7 +231,7 @@ class CreaEventoModal(discord.ui.Modal, title="Crea Evento"):
 
 class CreaEventoButton(discord.ui.Button):
     def __init__(self):
-        super().__init__(label="Crea Evento", style=discord.ButtonStyle.green, emoji="📅", custom_id="crea_evento_persistente")
+        super().__init__(label="Crea Evento", style=discord.ButtonStyle.green, emoji="📅")
     async def callback(self, interaction: discord.Interaction):
         await interaction.response.send_modal(CreaEventoModal())
 
@@ -241,7 +240,7 @@ class SoloBottoneView(discord.ui.View):
         super().__init__(timeout=None)
         self.add_item(CreaEventoButton())
     def get_embed(self):
-        embed = discord.Embed(description="### Clicca **Crea Evento** qui sotto per creare un evento nel tag giusto", color=0x2b2d31)
+        embed = discord.Embed(title="Crea il tuo Evento Qui - Calendario Eventi", description="Clicca **Crea Evento** qui sotto per creare un evento nel tag giusto", color=0x2b2d31)
         return embed
 
 async def invia_post_fisso_calendario():
@@ -284,19 +283,11 @@ async def invia_post_fisso_calendario():
 @bot.event
 async def on_ready():
     print(f"Online come {bot.user}")
-    # FIX TIMEOUT: registra le view persistenti
-    bot.add_view(SoloBottoneView())
     try:
         await bot.tree.sync()
-        print("Sync OK - view persistenti OK")
+        print("Sync OK")
     except Exception as e:
         print(e)
-    for guild in bot.guilds:
-        try:
-            if guild.me.display_name != "Calendario":
-                await guild.me.edit(nick="Calendario")
-        except:
-            pass
     bot.loop.create_task(invia_post_fisso_calendario())
 
 @bot.tree.command(name="calendario", description="Mostra calendario + crea evento")
