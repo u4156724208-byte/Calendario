@@ -1,17 +1,8 @@
-BLACKOUT Translator - FIX FINALE
-================================
-1. Estrai zip
-2. Carica bot.py e requirements.txt su GitHub (sovrascrivi)
-3. Su Render -> Environment:
-   DISCORD_TOKEN = token tuo bot
-   DEEPL_KEY = chiave DeepL free (finisce con :fx) -> https://www.deepl.com/it/account/summary
-   AUTO_CHANNELS = (lascia vuoto, poi metti ID canale dopo /traduci)
-4. Deploy -> Clear build cache & Deploy
-5. Discord -> /traduci nel canale WARDOGS
-6. Nei log Render vedrai: Bot ONLINE | DeepL=ON
-
-Fix inclusi:
-- DeepL come traduttore principale (non bloccato da Render, italiano perfetto)
-- chunk_smart che non rompe "6 seconds" in "6 s econds"
-- auto-recovery: se Render dorme, al prossimo WARDOGS si riattiva da solo
-- Persistenza via ENV AUTO_CHANNELS
+Radio 105 Bot - V7 FIX anti-abort
+1. Carica su GitHub
+2. Su Render: collega repo, env var DISCORD_TOKEN = token bot
+3. Build: npm install, Start: npm start
+4. UptimeRobot monitor su https://TUO-SERVIZIO.onrender.com ogni 5 min
+5. Invite BOT: https://discord.com/oauth2/authorize?client_id=1556323733046693920&permissions=36700160&scope=bot%20applications.commands
+6. Discord Ctrl+Shift+R -> /party in vocale
+Stream diretto: https://icecast.unitedradio.it/Radio105.mp3 - non abortisce mai
