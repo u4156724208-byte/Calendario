@@ -5,38 +5,29 @@ from flask import Flask
 import discord
 from discord.ext import commands
 
-# --- WEB SERVER PER RENDER (DEVE PARTIRE SUBITO) ---
 app = Flask(__name__)
 @app.route("/")
-def home(): 
-    return "Calendario Bot OK - UptimeRobot"
+def home(): return "Calendario Bot OK - UptimeRobot OK"
 
 def run_web():
     port = int(os.environ.get("PORT", 10000))
     print(f"[WEB] Avvio Flask su porta {port}")
-    try:
-        app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)
-    except Exception as e:
-        print(f"[WEB] Errore Flask: {e}")
+    app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)
 
-# Avvia Flask in thread daemon PRIMA di tutto
 threading.Thread(target=run_web, daemon=True).start()
-print("[INIT] Flask thread avviato, attendo 2 sec per bind porta...")
 time.sleep(2)
 
-# --- BOT DISCORD ---
 intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 ITALIA = ZoneInfo("Europe/Rome")
 COVER_IMAGE_PATH = "cover_C_corretta_finale.png"
-COVER_FILE_NAME = "cover_C_corretta_finale.png"
 CANALE_FISSO_ID = 1557509286911807629
 
 def get_cover_file():
     if os.path.exists(COVER_IMAGE_PATH):
-        return discord.File(COVER_IMAGE_PATH, filename=COVER_FILE_NAME)
+        return discord.File(COVER_IMAGE_PATH, filename="cover_C_corretta_finale.png")
     return None
 
 def get_ora_italia():
@@ -55,46 +46,37 @@ class EventoPartecipaView(discord.ui.View):
     async def partecipa(self, interaction: discord.Interaction, button: discord.ui.Button):
         user_id = interaction.user.id
         if any(p["id"] == user_id for p in self.partecipanti):
-            await interaction.response.send_message("Hai gia cliccato Partecipa!", ephemeral=True)
-            return
+            await interaction.response.send_message("Hai gia partecipato!", ephemeral=True); return
         if len(self.partecipanti) >= self.max_p:
-            await interaction.response.send_message(f"Evento pieno! Massimo {self.max_p} persone.", ephemeral=True)
-            return
+            await interaction.response.send_message(f"Pieno! Max {self.max_p}", ephemeral=True); return
         self.partecipanti.append({"id": user_id, "name": interaction.user.display_name})
         embed = discord.Embed(title=f"Evento del {self.data_str}", color=0x00ff88)
         embed.add_field(name="Titolo", value=self.titolo_evento, inline=False)
-        lista_nomi = "\n".join([f"• {p['name']}" for p in self.partecipanti])
-        valore = f"{len(self.partecipanti)}/{self.max_p} persone\n{lista_nomi}" if self.partecipanti else f"0/{self.max_p} persone"
-        embed.add_field(name="Partecipanti", value=valore, inline=False)
+        lista = "\n".join([f"• {p['name']}" for p in self.partecipanti])
+        embed.add_field(name="Partecipanti", value=f"{len(self.partecipanti)}/{self.max_p}\n{lista}", inline=False)
         embed.set_footer(text=f"Creato da {self.creatore}")
         if len(self.partecipanti) >= self.max_p:
-            button.disabled = True
-            button.label = "Evento Pieno"
-            button.style = discord.ButtonStyle.gray
+            button.disabled=True; button.label="Pieno"; button.style=discord.ButtonStyle.gray
         await interaction.response.edit_message(embed=embed, view=self)
 
     @discord.ui.button(label="Esci", style=discord.ButtonStyle.red, emoji="❌", custom_id="esci_btn")
     async def esci(self, interaction: discord.Interaction, button: discord.ui.Button):
         user_id = interaction.user.id
-        trovato = next((p for p in self.partecipanti if p["id"] == user_id), None)
-        if not trovato:
-            await interaction.response.send_message("Non stai partecipando.", ephemeral=True)
-            return
+        if not any(p["id"] == user_id for p in self.partecipanti):
+            await interaction.response.send_message("Non partecipi", ephemeral=True); return
         self.partecipanti = [p for p in self.partecipanti if p["id"] != user_id]
         embed = discord.Embed(title=f"Evento del {self.data_str}", color=0x00ff88)
         embed.add_field(name="Titolo", value=self.titolo_evento, inline=False)
         if self.partecipanti:
-            lista_nomi = "\n".join([f"• {p['name']}" for p in self.partecipanti])
-            valore = f"{len(self.partecipanti)}/{self.max_p} persone\n{lista_nomi}"
+            lista = "\n".join([f"• {p['name']}" for p in self.partecipanti])
+            val = f"{len(self.partecipanti)}/{self.max_p}\n{lista}"
         else:
-            valore = f"0/{self.max_p} persone"
-        embed.add_field(name="Partecipanti", value=valore, inline=False)
+            val = f"0/{self.max_p}"
+        embed.add_field(name="Partecipanti", value=val, inline=False)
         embed.set_footer(text=f"Creato da {self.creatore}")
         for child in self.children:
             if isinstance(child, discord.ui.Button) and child.custom_id == "partecipa_btn":
-                child.disabled = False
-                child.label = "Partecipa"
-                child.style = discord.ButtonStyle.green
+                child.disabled=False; child.label="Partecipa"; child.style=discord.ButtonStyle.green
         await interaction.response.edit_message(embed=embed, view=self)
 
 class CreaEventoModal(discord.ui.Modal, title="Crea Evento"):
@@ -102,104 +84,84 @@ class CreaEventoModal(discord.ui.Modal, title="Crea Evento"):
         super().__init__()
         adesso = get_ora_italia()
         data_oggi = f"{adesso.day:02d}/{adesso.month:02d}/{adesso.year}"
-        self.data = discord.ui.TextInput(label=f"Data GG/MM/AAAA - Oggi {data_oggi}", placeholder=f"Es: {data_oggi}", default=data_oggi, max_length=10, required=True)
-        self.ora = discord.ui.TextInput(label=f"Ora HH:MM - Ora {adesso.strftime('%H:%M')}", placeholder="Es: 21:00", default=adesso.strftime('%H:%M'), max_length=5, required=True)
-        self.titolo = discord.ui.TextInput(label="Titolo evento (scrivi gioco)", placeholder="Es: ARC Raiders LIVE", max_length=100, required=True)
-        self.max_p = discord.ui.TextInput(label="Max partecipanti 1-99", placeholder="Es: 3", default="3", max_length=2, required=True)
-        self.add_item(self.data)
-        self.add_item(self.ora)
-        self.add_item(self.titolo)
-        self.add_item(self.max_p)
+        self.data = discord.ui.TextInput(label=f"Data GG/MM/AAAA Oggi {data_oggi}", placeholder=data_oggi, default=data_oggi, max_length=10, required=True)
+        self.ora = discord.ui.TextInput(label=f"Ora HH:MM Ora {adesso.strftime('%H:%M')}", placeholder="21:00", default=adesso.strftime('%H:%M'), max_length=5, required=True)
+        self.titolo = discord.ui.TextInput(label="Titolo evento (gioco)", placeholder="ARC Raiders LIVE", max_length=100, required=True)
+        self.max_p = discord.ui.TextInput(label="Max 1-99", placeholder="3", default="3", max_length=2, required=True)
+        self.add_item(self.data); self.add_item(self.ora); self.add_item(self.titolo); self.add_item(self.max_p)
 
     async def on_submit(self, interaction: discord.Interaction):
+        # DEFER IMMEDIATO per evitare timeout
+        await interaction.response.defer(ephemeral=True, thinking=True)
         adesso = get_ora_italia()
         data_str_raw = self.data.value.strip()
         m = re.match(r"^(\d{1,2})[/\-\.](\d{1,2})[/\-\.](\d{4})$", data_str_raw)
         if not m:
-            await interaction.response.send_message("Data non valida! Usa GG/MM/AAAA", ephemeral=True)
-            return
+            await interaction.followup.send("Data non valida GG/MM/AAAA", ephemeral=True); return
         try:
-            g = int(m.group(1)); mese = int(m.group(2)); anno = int(m.group(3))
-            max_g = calendar.monthrange(anno, mese)[1]
-            if not (1 <= g <= 31 and 1 <= mese <= 12 and g <= max_g): raise ValueError()
-        except Exception as e:
-            await interaction.response.send_message(f"Data non valida: {e}", ephemeral=True)
-            return
-        ora_str = self.ora.value.strip()
-        try:
-            if ":" in ora_str:
-                h,mm = map(int, ora_str.split(":"))
-            else:
-                h = int(ora_str); mm = 0
-            if not (0 <= h <= 23 and 0 <= mm <= 59): raise ValueError()
+            g=int(m.group(1)); mese=int(m.group(2)); anno=int(m.group(3))
+            max_g=calendar.monthrange(anno,mese)[1]
+            if not (1<=g<=31 and 1<=mese<=12 and g<=max_g): raise ValueError()
         except:
-            await interaction.response.send_message("Ora non valida. Usa HH:MM", ephemeral=True)
-            return
+            await interaction.followup.send("Data non valida", ephemeral=True); return
+        ora_str=self.ora.value.strip()
         try:
-            max_partecipanti = int(self.max_p.value.strip())
-            if not (1 <= max_partecipanti <= 99): raise ValueError()
+            if ":" in ora_str: h,mm=map(int,ora_str.split(":"))
+            else: h=int(ora_str); mm=0
+            if not (0<=h<=23 and 0<=mm<=59): raise ValueError()
         except:
-            await interaction.response.send_message("Max partecipanti non valido!", ephemeral=True)
-            return
+            await interaction.followup.send("Ora non valida HH:MM", ephemeral=True); return
+        try:
+            max_partecipanti=int(self.max_p.value.strip())
+            if not (1<=max_partecipanti<=99): raise ValueError()
+        except:
+            await interaction.followup.send("Max non valido", ephemeral=True); return
         from datetime import datetime as dt
         try:
-            data_evento = dt(anno, mese, g, h, mm, tzinfo=ITALIA)
-            if data_evento <= adesso:
-                await interaction.response.send_message(f"Data nel passato! Ora e' {adesso.strftime('%d/%m/%Y %H:%M')}", ephemeral=True)
-                return
+            data_evento=dt(anno,mese,g,h,mm,tzinfo=ITALIA)
+            if data_evento<=adesso:
+                await interaction.followup.send(f"Data nel passato! Ora {adesso.strftime('%d/%m/%Y %H:%M')}", ephemeral=True); return
         except Exception as e:
-            await interaction.response.send_message(f"Errore data: {e}", ephemeral=True)
-            return
-
-        data_formattata = f"{g:02d}/{mese:02d}/{anno} ore {h:02d}:{mm:02d}"
-        view = EventoPartecipaView(max_partecipanti=max_partecipanti, titolo_evento=self.titolo.value, data_str=data_formattata, creatore=interaction.user.display_name)
+            await interaction.followup.send(f"Errore data {e}", ephemeral=True); return
+        data_formattata=f"{g:02d}/{mese:02d}/{anno} ore {h:02d}:{mm:02d}"
+        view=EventoPartecipaView(max_partecipanti=max_partecipanti, titolo_evento=self.titolo.value, data_str=data_formattata, creatore=interaction.user.display_name)
         view.partecipanti.append({"id": interaction.user.id, "name": interaction.user.display_name})
-
-        embed = discord.Embed(title=f"Evento del {data_formattata}", color=0x00ff88)
+        embed=discord.Embed(title=f"Evento del {data_formattata}", color=0x00ff88)
         embed.add_field(name="Titolo", value=self.titolo.value, inline=False)
-        embed.add_field(name="Partecipanti", value=f"1/{max_partecipanti} persone\n• {interaction.user.display_name}", inline=False)
+        embed.add_field(name="Partecipanti", value=f"1/{max_partecipanti}\n• {interaction.user.display_name}", inline=False)
         embed.set_footer(text=f"Creato da {interaction.user.display_name}")
-
         try:
-            forum = interaction.client.get_channel(CANALE_FISSO_ID)
-            if not forum:
-                forum = await interaction.client.fetch_channel(CANALE_FISSO_ID)
-
+            forum=bot.get_channel(CANALE_FISSO_ID)
+            if not forum: forum=await bot.fetch_channel(CANALE_FISSO_ID)
             if isinstance(forum, discord.ForumChannel):
-                titolo_lower = self.titolo.value.lower()
+                titolo_lower=self.titolo.value.lower()
                 def trova_tag():
-                    tags_sorted = sorted(forum.available_tags, key=lambda t: len(t.name), reverse=True)
+                    tags_sorted=sorted(forum.available_tags, key=lambda t: len(t.name), reverse=True)
                     for tag in tags_sorted:
-                        nome = tag.name.lower().strip()
+                        nome=tag.name.lower().strip()
                         if "crea evento" in nome: continue
                         if nome in titolo_lower: return tag
                     for tag in tags_sorted:
-                        nome = tag.name.lower().strip()
+                        nome=tag.name.lower().strip()
                         if "crea evento" in nome: continue
                         for parola in nome.split():
-                            if len(parola) >= 3 and parola in titolo_lower: return tag
+                            if len(parola)>=3 and parola in titolo_lower: return tag
                     for tag in forum.available_tags:
                         if "altro" in tag.name.lower(): return tag
                     for tag in forum.available_tags:
                         if "crea evento" not in tag.name.lower(): return tag
                     return None
-                tag_scelto = trova_tag()
-                applied = [tag_scelto] if tag_scelto else []
-                await forum.create_thread(
-                    name=f"{self.titolo.value} - {data_formattata}",
-                    content=f"📅 {data_formattata}\n👤 Creato da {interaction.user.mention}",
-                    embed=embed,
-                    view=view,
-                    applied_tags=applied
-                )
-                tag_nome = tag_scelto.name if tag_scelto else "Altro"
-                await interaction.response.send_message(f"✅ Evento creato in <#{CANALE_FISSO_ID}> con tag **{tag_nome}**!\n📅 {data_formattata}", ephemeral=True)
+                tag_scelto=trova_tag()
+                applied=[tag_scelto] if tag_scelto else []
+                await forum.create_thread(name=f"{self.titolo.value} - {data_formattata}", content=f"📅 {data_formattata}\n👤 {interaction.user.mention}", embed=embed, view=view, applied_tags=applied)
+                tag_nome=tag_scelto.name if tag_scelto else "Altro"
+                await interaction.followup.send(f"✅ Evento creato in <#{CANALE_FISSO_ID}> tag **{tag_nome}**! 📅 {data_formattata}", ephemeral=True)
             else:
-                await interaction.response.send_message(f"✅ Evento creato per {data_formattata}", ephemeral=True)
+                await interaction.followup.send(f"✅ Evento creato {data_formattata}", ephemeral=True)
                 await interaction.channel.send(embed=embed, view=view)
         except Exception as e:
             import traceback; traceback.print_exc()
-            await interaction.response.send_message(f"Errore creazione: {e}", ephemeral=True)
+            await interaction.followup.send(f"Errore: {e}", ephemeral=True)
 
 class CreaEventoButton(discord.ui.Button):
     def __init__(self):
@@ -208,122 +170,74 @@ class CreaEventoButton(discord.ui.Button):
         try:
             await interaction.response.send_modal(CreaEventoModal())
         except Exception as e:
-            print(f"Errore send_modal: {e}")
-            try:
-                await interaction.response.send_message("Riprova tra 2 sec, sto ripartendo...", ephemeral=True)
-            except:
-                pass
+            print(f"send_modal err {e}")
 
 class SoloBottoneView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
         self.add_item(CreaEventoButton())
     def get_embed(self):
-        embed = discord.Embed(title="Crea il tuo Evento Qui - Calendario Eventi", description="Clicca **Crea Evento** qui sotto per creare un evento nel tag giusto", color=0x2b2d31)
-        return embed
+        return discord.Embed(title="Crea il tuo Evento Qui - Calendario Eventi", description="Clicca **Crea Evento** qui sotto", color=0x2b2d31)
 
 async def invia_post_fisso_calendario():
     await bot.wait_until_ready()
     try:
-        canale = bot.get_channel(CANALE_FISSO_ID)
-        if not canale:
-            canale = await bot.fetch_channel(CANALE_FISSO_ID)
+        canale=bot.get_channel(CANALE_FISSO_ID)
+        if not canale: canale=await bot.fetch_channel(CANALE_FISSO_ID)
         if not canale: return
-        if isinstance(canale, discord.ForumChannel):
-            for thread in canale.threads:
-                if "Crea il tuo Evento Qui" in thread.name and thread.owner_id == bot.user.id: return
-        else:
-            async for msg in canale.history(limit=30):
-                if msg.author == bot.user and msg.embeds and any("Crea il tuo Evento Qui" in (e.title or "") for e in msg.embeds): return
-        view = SoloBottoneView()
-        embed = view.get_embed()
-        file_cover = get_cover_file()
-        if file_cover:
-            embed.set_image(url=f"attachment://{COVER_FILE_NAME}")
-        if isinstance(canale, discord.ForumChannel):
-            tag_crea = None
-            for t in canale.available_tags:
-                if "Crea Evento" in t.name:
-                    tag_crea = t
-                    break
-            tags = [tag_crea] if tag_crea else []
-            await canale.create_thread(name="Crea il tuo Evento Qui", content="**Crea il tuo Evento Qui - Calendario Eventi**", embed=embed, view=view, applied_tags=tags, file=file_cover)
-        else:
-            await canale.send(embed=embed, view=view, file=file_cover)
-    except Exception as e:
-        print(f"Errore guida: {e}")
+    except: return
 
 @bot.event
 async def on_ready():
-    print(f"[BOT] Online come {bot.user}")
+    print(f"[BOT] Online {bot.user}")
     bot.add_view(SoloBottoneView())
-    bot.add_view(EventoPartecipaView(max_partecipanti=99, titolo_evento="x", data_str="x", creatore="x"))
+    bot.add_view(EventoPartecipaView(99,"x","x","x"))
     try:
-        await bot.tree.sync()
-        print("[BOT] Sync OK + Persistent Views")
-    except Exception as e:
-        print(e)
-    bot.loop.create_task(invia_post_fisso_calendario())
+        synced=await bot.tree.sync()
+        print(f"[BOT] Sync {len(synced)} comandi OK")
+    except Exception as e: print(e)
 
 @bot.tree.command(name="calendario", description="Mostra calendario + crea evento")
 async def calendario(interaction: discord.Interaction):
-    view = SoloBottoneView()
-    embed = view.get_embed()
-    file_cover = get_cover_file()
-    if file_cover:
-        embed.set_image(url=f"attachment://{file_cover.filename}")
-    await interaction.response.send_message("Calendario inviato!", ephemeral=True)
+    await interaction.response.defer(ephemeral=True)
+    view=SoloBottoneView()
+    embed=view.get_embed()
+    file_cover=get_cover_file()
+    if file_cover: embed.set_image(url=f"attachment://{file_cover.filename}")
+    await interaction.followup.send("Calendario qui sotto", ephemeral=True)
     await interaction.channel.send(embed=embed, view=view, file=file_cover)
 
-@bot.tree.command(name="setup_calendario", description="Pubblica il post fisso")
+@bot.tree.command(name="setup_calendario", description="Pubblica post fisso")
 async def setup_calendario(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True, thinking=True)
     try:
-        canale = bot.get_channel(CANALE_FISSO_ID)
-        if not canale:
-            canale = await bot.fetch_channel(CANALE_FISSO_ID)
-        view = SoloBottoneView()
-        embed = view.get_embed()
-        file_cover = get_cover_file()
-        if file_cover:
-            embed.set_image(url=f"attachment://{file_cover.filename}")
+        canale=bot.get_channel(CANALE_FISSO_ID)
+        if not canale: canale=await bot.fetch_channel(CANALE_FISSO_ID)
+        view=SoloBottoneView()
+        embed=view.get_embed()
+        file_cover=get_cover_file()
+        if file_cover: embed.set_image(url=f"attachment://{file_cover.filename}")
         if isinstance(canale, discord.ForumChannel):
-            tag_crea = None
+            tag_crea=None
             for t in canale.available_tags:
-                if "Crea Evento" in t.name:
-                    tag_crea = t
-                    break
-            tags = [tag_crea] if tag_crea else []
-            await canale.create_thread(name="Crea il tuo Evento Qui", content="**Crea il tuo Evento Qui - Calendario Eventi**", embed=embed, view=view, applied_tags=tags, file=file_cover)
+                if "Crea Evento" in t.name: tag_crea=t; break
+            tags=[tag_crea] if tag_crea else []
+            await canale.create_thread(name="Crea il tuo Evento Qui", content="**Crea il tuo Evento Qui**", embed=embed, view=view, applied_tags=tags, file=file_cover)
         else:
             await canale.send(embed=embed, view=view, file=file_cover)
-        await interaction.response.send_message(f"Post guida pubblicato in <#{CANALE_FISSO_ID}>", ephemeral=True)
+        await interaction.followup.send(f"Post pubblicato in <#{CANALE_FISSO_ID}>", ephemeral=True)
     except Exception as e:
         import traceback; traceback.print_exc()
-        await interaction.response.send_message(f"Errore: {e}", ephemeral=True)
+        await interaction.followup.send(f"Errore: {e}", ephemeral=True)
 
-@bot.command(name="calendario")
-async def calendario_prefix(ctx):
-    view = SoloBottoneView()
-    embed = view.get_embed()
-    file_cover = get_cover_file()
-    if file_cover:
-        embed.set_image(url=f"attachment://{file_cover.filename}")
-    await ctx.send(embed=embed, view=view, file=file_cover)
-
-# --- AVVIO BOT CON GESTIONE ERRORI ---
-TOKEN = os.getenv("DISCORD_TOKEN")
+TOKEN=os.getenv("DISCORD_TOKEN")
 if not TOKEN:
-    print("[ERRORE] DISCORD_TOKEN non trovato! Il web server rimane attivo per Render.")
-    # Mantieni il processo vivo per Render anche senza token
-    while True:
-        time.sleep(60)
+    print("[ERRORE] DISCORD_TOKEN mancante - web server vivo")
+    while True: time.sleep(60)
 else:
     try:
-        print("[BOT] Avvio bot Discord...")
         bot.run(TOKEN)
     except Exception as e:
-        print(f"[BOT] Crash: {e}")
+        print(f"[BOT] Crash {e}")
         import traceback; traceback.print_exc()
-        print("[WEB] Bot crashato ma web server rimane attivo per non far fallire Render")
-        while True:
-            time.sleep(60)
+        while True: time.sleep(60)
