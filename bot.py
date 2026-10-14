@@ -1,18 +1,30 @@
 
-import os, threading, datetime, calendar, re
+import os, threading, datetime, calendar, re, time
 from zoneinfo import ZoneInfo
 from flask import Flask
 import discord
 from discord.ext import commands
 
+# --- WEB SERVER PER RENDER (DEVE PARTIRE SUBITO) ---
 app = Flask(__name__)
 @app.route("/")
-def home(): return "OK"
+def home(): 
+    return "Calendario Bot OK - UptimeRobot"
+
 def run_web():
     port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port)
-threading.Thread(target=run_web, daemon=True).start()
+    print(f"[WEB] Avvio Flask su porta {port}")
+    try:
+        app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)
+    except Exception as e:
+        print(f"[WEB] Errore Flask: {e}")
 
+# Avvia Flask in thread daemon PRIMA di tutto
+threading.Thread(target=run_web, daemon=True).start()
+print("[INIT] Flask thread avviato, attendo 2 sec per bind porta...")
+time.sleep(2)
+
+# --- BOT DISCORD ---
 intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
@@ -193,7 +205,14 @@ class CreaEventoButton(discord.ui.Button):
     def __init__(self):
         super().__init__(label="Crea Evento", style=discord.ButtonStyle.green, emoji="📅", custom_id="crea_evento_btn")
     async def callback(self, interaction: discord.Interaction):
-        await interaction.response.send_modal(CreaEventoModal())
+        try:
+            await interaction.response.send_modal(CreaEventoModal())
+        except Exception as e:
+            print(f"Errore send_modal: {e}")
+            try:
+                await interaction.response.send_message("Riprova tra 2 sec, sto ripartendo...", ephemeral=True)
+            except:
+                pass
 
 class SoloBottoneView(discord.ui.View):
     def __init__(self):
@@ -236,12 +255,12 @@ async def invia_post_fisso_calendario():
 
 @bot.event
 async def on_ready():
-    print(f"Online come {bot.user}")
+    print(f"[BOT] Online come {bot.user}")
     bot.add_view(SoloBottoneView())
     bot.add_view(EventoPartecipaView(max_partecipanti=99, titolo_evento="x", data_str="x", creatore="x"))
     try:
         await bot.tree.sync()
-        print("Sync OK + Persistent Views")
+        print("[BOT] Sync OK + Persistent Views")
     except Exception as e:
         print(e)
     bot.loop.create_task(invia_post_fisso_calendario())
@@ -291,4 +310,20 @@ async def calendario_prefix(ctx):
         embed.set_image(url=f"attachment://{file_cover.filename}")
     await ctx.send(embed=embed, view=view, file=file_cover)
 
-bot.run(os.getenv("DISCORD_TOKEN"))
+# --- AVVIO BOT CON GESTIONE ERRORI ---
+TOKEN = os.getenv("DISCORD_TOKEN")
+if not TOKEN:
+    print("[ERRORE] DISCORD_TOKEN non trovato! Il web server rimane attivo per Render.")
+    # Mantieni il processo vivo per Render anche senza token
+    while True:
+        time.sleep(60)
+else:
+    try:
+        print("[BOT] Avvio bot Discord...")
+        bot.run(TOKEN)
+    except Exception as e:
+        print(f"[BOT] Crash: {e}")
+        import traceback; traceback.print_exc()
+        print("[WEB] Bot crashato ma web server rimane attivo per non far fallire Render")
+        while True:
+            time.sleep(60)
